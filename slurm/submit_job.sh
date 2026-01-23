@@ -19,7 +19,7 @@
 HPARAMS=(8 12 16 24 32 64 128 256)
 CURRENT_LATENT=${HPARAMS[$SLURM_ARRAY_TASK_ID]}
 
-cd /global/u1/n/ndwang/Space-Charge-CVAE
+cd /pscratch/sd/n/ndwang/vae
 ml load conda
 conda activate sc_surrogate
-python train_vae2d.py --batch-size 256 --num-workers 8 --epochs 300 --latent-dim $CURRENT_LATENT
+python scripts/train.py --batch-size 256 --num-workers 8 --epochs 300 --latent-dim $CURRENT_LATENT

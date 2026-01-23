@@ -11,8 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import logging
 
-# Assuming you have this helper, otherwise replace with direct nn.ReLU, etc.
-from activations import get_activation 
+from src.utils.activations import get_activation
 
 logger = logging.getLogger(__name__)
 

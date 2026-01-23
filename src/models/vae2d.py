@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
-from activations import get_activation
+from src.utils.activations import get_activation
 
 logger = logging.getLogger(__name__)
 

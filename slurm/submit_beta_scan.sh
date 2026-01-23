@@ -16,7 +16,7 @@
 #SBATCH --gpus=4                   # Number of GPUs requested
 
 
-cd /global/u1/n/ndwang/Space-Charge-CVAE
+cd /pscratch/sd/n/ndwang/vae
 ml load conda
 conda activate sc_surrogate
 mkdir -p logs
@@ -30,5 +30,5 @@ mkdir -p logs
 export SRUN_ARGS="--exact --ntasks 1 --gpus 1 --cpus-per-task 32"
 
 parallel -j 4 --delay 0.2 \
-    "srun $SRUN_ARGS python train_vae2d.py --batch-size 256 --num-workers 8 --epochs 300 --beta {} > logs/beta_run_{#}.log 2>&1" \
+    "srun $SRUN_ARGS python scripts/train.py --batch-size 256 --num-workers 8 --epochs 300 --beta {} > logs/beta_run_{#}.log 2>&1" \
     :::: beta_scan.txt
