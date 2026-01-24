@@ -88,6 +88,10 @@ configs/
 | `beta` | 0.0 | KL divergence weight (β-VAE) |
 | `val_split` | 0.1 | Validation split ratio |
 | `seed` | 42 | Random seed |
+| `checkpoint_freq` | 50 | Save checkpoint every N epochs |
+| `wandb.enabled` | false | Enable Weights & Biases logging |
+| `wandb.project` | vae-training | W&B project name |
+| `wandb.offline` | true | Offline mode (for NERSC) |
 
 ### CLI Overrides
 
@@ -126,10 +130,22 @@ This will:
 Each training run creates a directory with:
 ```
 runs/<run_name>/
-├── config.yaml           # Full configuration (for reproducibility)
-├── <run_name>.pth       # Model weights
-└── <run_name>_history.csv  # Training/validation losses
+├── config.yaml              # Full configuration (for reproducibility)
+├── <run_name>.pth          # Final model weights
+├── <run_name>_best.pth     # Best model checkpoint (lowest val loss)
+├── <run_name>_epoch50.pth  # Periodic checkpoints (every 50 epochs)
+├── <run_name>_epoch100.pth
+├── <run_name>_history.csv  # Training/validation losses
+└── wandb/                   # W&B logs (if enabled)
 ```
+
+**Checkpoint Contents:**
+- `epoch` - Training epoch number
+- `model_state_dict` - Model weights
+- `optimizer_state_dict` - Optimizer state
+- `scheduler_state_dict` - Scheduler state
+- `val_loss` - Validation loss
+- `beta` - KL divergence weight
 
 ### Monitoring Training
 
@@ -139,6 +155,115 @@ Epoch 1/300 | Train: 0.012345 | Val: 0.013456 | LR: 5.00e-04
 Epoch 2/300 | Train: 0.011234 | Val: 0.012345 | LR: 5.00e-04
 ...
 ```
+
+## Weights & Biases Integration
+
+Track experiments, visualize metrics, and manage model artifacts with W&B.
+
+### Installation
+
+```bash
+conda activate vae
+pip install wandb
+wandb login  # One-time setup (from login node with internet)
+```
+
+### Basic Usage
+
+```bash
+# Enable W&B logging
+python scripts/train.py training.wandb.enabled=true
+
+# Customize W&B settings
+python scripts/train.py \
+    training.wandb.enabled=true \
+    training.wandb.project=my-vae-experiments \
+    training.wandb.offline=false
+```
+
+### Configuration
+
+W&B settings in `configs/training/default.yaml`:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `wandb.enabled` | false | Enable/disable W&B logging |
+| `wandb.project` | vae-training | W&B project name |
+| `wandb.entity` | null | W&B team/username (null = default) |
+| `wandb.offline` | true | Offline mode (sync later) |
+| `wandb.tags` | [] | Optional tags for run organization |
+| `wandb.notes` | null | Optional run description |
+
+### NERSC Offline Workflow
+
+Compute nodes don't have internet access, so use offline mode (default):
+
+**1. Train on compute node (offline mode):**
+```bash
+python scripts/train.py training.wandb.enabled=true
+# W&B logs saved to runs/<run_name>/wandb/offline-run-*
+```
+
+**2. Sync from login node (with internet):**
+```bash
+# After job completes, sync all offline runs
+wandb sync runs/*/wandb/offline-run-*
+
+# Or sync specific run
+wandb sync runs/<run_name>/wandb/offline-run-*
+```
+
+**3. View on W&B dashboard:**
+Visit https://wandb.ai to see your synced runs.
+
+### Logged Metrics
+
+W&B tracks per-epoch metrics:
+- `train/total_loss` - Total training loss
+- `train/recon_loss` - Reconstruction loss
+- `train/kl_loss` - KL divergence
+- `val/total_loss` - Validation total loss
+- `val/recon_loss` - Validation reconstruction loss
+- `val/kl_loss` - Validation KL divergence
+- `learning_rate` - Current learning rate
+
+### Checkpoint Tracking
+
+W&B logs checkpoint metadata (file paths and metrics) without uploading the actual checkpoint files:
+- **Best model**: Path, epoch, and validation loss tracked in run summary
+- **Periodic checkpoints**: Path logged at each checkpoint interval
+- **Checkpoint files remain local** - easily accessible via file paths in W&B dashboard
+
+This approach keeps W&B runs lightweight while maintaining full checkpoint traceability.
+
+### Checkpointing
+
+Independent of W&B, the trainer saves:
+- **Best model**: `<run_name>_best.pth` (updated when validation loss improves)
+- **Periodic**: `<run_name>_epoch{N}.pth` (every `checkpoint_freq` epochs, default 50)
+- **Final model**: `<run_name>.pth` (end of training)
+
+Adjust checkpoint frequency:
+```bash
+python scripts/train.py training.checkpoint_freq=25  # Save every 25 epochs
+```
+
+### Example: Multi-Run Sweep with W&B
+
+```bash
+# Launch sweep with different latent dimensions
+for latent_dim in 16 32 64 128; do
+    python scripts/train.py \
+        training.wandb.enabled=true \
+        model.latent_dim=$latent_dim \
+        run_name=vae_latent${latent_dim}
+done
+
+# Sync all runs when complete
+wandb sync runs/*/wandb/offline-run-*
+```
+
+Then compare all runs on the W&B dashboard with interactive plots and parallel coordinates.
 
 ## SLURM Jobs
 
@@ -233,7 +358,9 @@ vae/
 │   │   └── losses.py
 │   └── utils/              # Utilities
 │       ├── config.py
-│       └── activations.py
+│       ├── activations.py
+│       ├── logging.py      # W&B callback classes
+│       └── wandb_init.py   # W&B initialization
 ├── data/                    # Dataset files (not in git)
 ├── runs/                    # Training outputs (not in git)
 ├── CLAUDE.md
@@ -258,37 +385,3 @@ Enhanced VAE with residual connections:
 - Residual blocks before each down/upsample operation
 - Skip connections for better gradient flow
 - ~2x more parameters than standard VAE
-
-### Choosing a Model
-
-| Use Case | Recommended Model |
-|----------|-------------------|
-| Fast iteration, baseline | `vae2d` |
-| Higher quality reconstruction | `residual_vae2d` |
-| Limited GPU memory | `vae2d` with smaller `hidden_channels` |
-
-## Tips
-
-### Hyperparameter Tuning
-
-1. **Latent dimension**: Start with 64, try 32-256 range
-2. **Beta (KL weight)**: Start with 0 (pure AE), increase to 1e-5 to 1e-3 for disentanglement
-3. **Learning rate**: 5e-4 works well, reduce if training unstable
-
-### Debugging
-
-```bash
-# Quick test run (2 epochs, small batch)
-python scripts/train.py training.epochs=2 training.batch_size=32
-
-# Check for NaN losses
-# The trainer will raise an error if NaN is detected
-```
-
-### Reproducibility
-
-Each run saves its full config. To reproduce:
-
-```bash
-python scripts/train.py --config runs/previous_run/config.yaml
-```

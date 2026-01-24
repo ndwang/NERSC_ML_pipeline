@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 from src.models import VAE2D, ResidualVAE2D
 from src.data import FrequencyMapDataset
 from src.training import Trainer
-from src.utils import load_config, save_config, config_to_model_config, generate_run_name
+from src.utils import load_config, save_config, config_to_model_config, generate_run_name, init_wandb
 
 
 def get_args():
@@ -161,6 +161,14 @@ def main():
     else:
         scheduler = None
 
+    # Output setup (before trainer so W&B can use the directory)
+    run_name = config.get('run_name') or generate_run_name(config)
+    output_dir = Path(config.get('output_dir', './runs')) / run_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Initialize W&B (if enabled)
+    wandb_run, logger_callback = init_wandb(config, run_name, output_dir)
+
     # Create trainer
     trainer = Trainer(
         model=model,
@@ -170,31 +178,31 @@ def main():
         beta=training_cfg.get('beta', 0.0),
         loss_type=training_cfg.get('loss_type', 'mse'),
         grad_clip=training_cfg.get('grad_clip', 1.0),
+        logger_callback=logger_callback,
     )
-
-    # Output setup
-    run_name = config.get('run_name') or generate_run_name(config)
-    output_dir = Path(config.get('output_dir', './runs')) / run_name
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save config to output directory
     save_config(config, output_dir / "config.yaml")
 
     # Train
     epochs = training_cfg.get('epochs', 300)
+    checkpoint_freq = training_cfg.get('checkpoint_freq', 50)
     print(f"Starting training: {run_name}")
     print(f"Config saved to: {output_dir / 'config.yaml'}")
 
-    trainer.fit(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        epochs=epochs,
-        max_steps=training_cfg.get('max_steps'),
-        save_dir=output_dir,
-        model_name=run_name,
-    )
-
-    print("Training complete!")
+    try:
+        trainer.fit(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            epochs=epochs,
+            max_steps=training_cfg.get('max_steps'),
+            save_dir=output_dir,
+            model_name=run_name,
+            checkpoint_freq=checkpoint_freq,
+        )
+        print("Training complete!")
+    finally:
+        logger_callback.finish()
 
 
 if __name__ == "__main__":

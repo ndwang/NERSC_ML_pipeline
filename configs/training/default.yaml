@@ -13,3 +13,15 @@ scheduler:
   name: reduce_on_plateau
   factor: 0.5
   patience: 10
+
+# Checkpointing
+checkpoint_freq: 50  # Save checkpoint every N epochs (in addition to best)
+
+# W&B logging
+wandb:
+  enabled: false          # Master switch
+  project: "beam-vae"     # W&B project name
+  entity: "ndwang"        # W&B team/username (null = default)
+  offline: true           # Default true for NERSC (sync later from login node)
+  tags: []                # Optional tags
+  notes: null             # Optional description

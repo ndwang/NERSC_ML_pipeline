@@ -2,7 +2,7 @@
 
 import csv
 from pathlib import Path
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -10,6 +10,9 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .losses import vae_loss
+
+if TYPE_CHECKING:
+    from src.utils.logging import LoggingCallback
 
 
 class Trainer:
@@ -23,6 +26,7 @@ class Trainer:
         beta: KL divergence weight for beta-VAE.
         loss_type: Type of reconstruction loss ('mse' or 'bce').
         grad_clip: Maximum gradient norm for clipping.
+        logger_callback: Optional logging callback for metrics and artifacts.
     """
 
     def __init__(
@@ -34,6 +38,7 @@ class Trainer:
         beta: float = 0.0,
         loss_type: str = "mse",
         grad_clip: float = 1.0,
+        logger_callback: Optional["LoggingCallback"] = None,
     ):
         self.model = model
         self.optimizer = optimizer
@@ -42,6 +47,15 @@ class Trainer:
         self.beta = beta
         self.loss_type = loss_type
         self.grad_clip = grad_clip
+
+        # Logging callback (import here to avoid circular imports)
+        if logger_callback is None:
+            from src.utils.logging import NoOpCallback
+            logger_callback = NoOpCallback()
+        self.logger_callback = logger_callback
+
+        # Best model tracking for checkpointing
+        self.best_val_loss = float('inf')
 
         self.model.to(self.device)
 
@@ -142,6 +156,7 @@ class Trainer:
         max_steps: Optional[int] = None,
         save_dir: Optional[Path] = None,
         model_name: str = "vae",
+        checkpoint_freq: int = 50,
     ) -> Dict[str, list]:
         """Train the model for multiple epochs.
 
@@ -152,6 +167,7 @@ class Trainer:
             max_steps: Optional maximum steps per epoch.
             save_dir: Directory to save model and history.
             model_name: Base name for saved files.
+            checkpoint_freq: Save checkpoint every N epochs.
 
         Returns:
             Training history dictionary.
@@ -183,7 +199,40 @@ class Trainer:
                 f"LR: {current_lr:.2e}"
             )
 
-        # Save model and history
+            # Log metrics to callback
+            self.logger_callback.log_metrics({
+                "train/total_loss": train_metrics["total"],
+                "train/recon_loss": train_metrics["recon"],
+                "train/kl_loss": train_metrics["kl"],
+                "val/total_loss": val_metrics["total"],
+                "val/recon_loss": val_metrics["recon"],
+                "val/kl_loss": val_metrics["kl"],
+                "learning_rate": current_lr,
+            }, step=epoch + 1)
+
+            # Checkpointing
+            if save_dir is not None:
+                save_dir = Path(save_dir)
+                save_dir.mkdir(parents=True, exist_ok=True)
+
+                # Save best model
+                if val_metrics["total"] < self.best_val_loss:
+                    self.best_val_loss = val_metrics["total"]
+                    best_path = save_dir / f"{model_name}_best.pth"
+                    self._save_checkpoint(best_path, epoch + 1, val_metrics["total"])
+                    self.logger_callback.log_checkpoint_metadata(
+                        best_path, epoch + 1, val_metrics["total"], is_best=True
+                    )
+
+                # Periodic checkpoint
+                if (epoch + 1) % checkpoint_freq == 0:
+                    ckpt_path = save_dir / f"{model_name}_epoch{epoch + 1}.pth"
+                    self._save_checkpoint(ckpt_path, epoch + 1, val_metrics["total"])
+                    self.logger_callback.log_checkpoint_metadata(
+                        ckpt_path, epoch + 1, val_metrics["total"], is_best=False
+                    )
+
+        # Save final model and history
         if save_dir is not None:
             save_dir = Path(save_dir)
             save_dir.mkdir(parents=True, exist_ok=True)
@@ -197,6 +246,24 @@ class Trainer:
             print(f"History saved to: {history_path}")
 
         return self.history
+
+    def _save_checkpoint(self, path: Path, epoch: int, val_loss: float) -> None:
+        """Save a full checkpoint with model, optimizer, and scheduler state.
+
+        Args:
+            path: Path to save the checkpoint.
+            epoch: Current epoch number.
+            val_loss: Current validation loss.
+        """
+        torch.save({
+            "epoch": epoch,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
+            "val_loss": val_loss,
+            "beta": self.beta,
+        }, path)
+        print(f"Checkpoint saved: {path}")
 
     def _save_history(self, path: Path, epochs: int) -> None:
         """Save training history to CSV file."""
