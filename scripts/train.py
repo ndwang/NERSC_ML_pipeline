@@ -16,6 +16,9 @@ Usage:
 
     # Combine config and overrides
     python scripts/train.py --config configs/default.yaml training.beta=1e-5
+
+    # Resume from checkpoint
+    python scripts/train.py --resume runs/my_run/vae_best.pth
 """
 
 import argparse
@@ -49,6 +52,12 @@ def get_args():
         type=str,
         default="configs",
         help="Base directory for config files"
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to checkpoint to resume training from"
     )
 
     # Collect remaining args as overrides
@@ -180,6 +189,11 @@ def main():
         grad_clip=training_cfg.get('grad_clip', 1.0),
         logger_callback=logger_callback,
     )
+
+    # Load checkpoint if resuming
+    if args.resume:
+        resume_path = Path(args.resume)
+        trainer.load_checkpoint(resume_path)
 
     # Save config to output directory
     save_config(config, output_dir / "config.yaml")

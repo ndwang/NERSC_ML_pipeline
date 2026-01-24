@@ -257,7 +257,7 @@ class VAE2D(nn.Module):
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         mu, logvar = self.encode(x)
-        if self.use_reparameterization:
+        if self.use_reparameterization and self.training:
             z = self.reparameterize(mu, logvar)
         else:
             z = mu

@@ -1,6 +1,7 @@
 """Configuration loading and management utilities."""
 
 import copy
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -76,6 +77,7 @@ def load_config(
     config_path: Optional[Union[str, Path]] = None,
     config_dir: Union[str, Path] = "configs",
     overrides: Optional[List[str]] = None,
+    validate: bool = True,
 ) -> Dict[str, Any]:
     """Load and compose configuration from YAML files.
 
@@ -83,9 +85,13 @@ def load_config(
         config_path: Path to main config file. Defaults to config_dir/default.yaml.
         config_dir: Base directory for config files.
         overrides: List of CLI override strings.
+        validate: Whether to validate the config against the schema.
 
     Returns:
         Composed configuration dictionary.
+
+    Raises:
+        ConfigValidationError: If validate=True and config is invalid.
     """
     config_dir = Path(config_dir)
 
@@ -119,6 +125,11 @@ def load_config(
     if overrides:
         composed = apply_overrides(composed, overrides)
 
+    # Validate config against schema
+    if validate:
+        from .validation import validate_config
+        composed = validate_config(composed)
+
     return composed
 
 
@@ -137,12 +148,13 @@ def config_to_model_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def generate_run_name(config: Dict[str, Any]) -> str:
-    """Generate a run name from config parameters."""
+    """Generate a run name from config parameters with timestamp for uniqueness."""
     model_name = config.get('model', {}).get('name', 'vae')
     epochs = config.get('training', {}).get('epochs', 0)
     beta = config.get('training', {}).get('beta', 0)
     lr = config.get('training', {}).get('lr', 0)
     latent_dim = config.get('model', {}).get('latent_dim', 0)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Format: ModelName_eEPOCHS_BBETA_lrLR_latentDIM
-    return f"{model_name}_e{epochs}_B{beta}_lr{lr}_latent{latent_dim}"
+    # Format: ModelName_eEPOCHS_BBETA_lrLR_latentDIM_TIMESTAMP
+    return f"{model_name}_e{epochs}_B{beta}_lr{lr}_latent{latent_dim}_{timestamp}"

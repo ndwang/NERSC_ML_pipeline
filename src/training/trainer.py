@@ -64,6 +64,50 @@ class Trainer:
             "val_total": [], "val_recon": [], "val_kl": []
         }
 
+        # Track starting epoch for resume functionality
+        self.start_epoch = 0
+
+    def load_checkpoint(self, checkpoint_path: Path) -> int:
+        """Load a checkpoint to resume training.
+
+        Args:
+            checkpoint_path: Path to the checkpoint file.
+
+        Returns:
+            The epoch number to resume from.
+        """
+        checkpoint_path = Path(checkpoint_path)
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+        print(f"Loading checkpoint: {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+
+        # Load model state
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+
+        # Load optimizer state
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+        # Load scheduler state if available
+        if self.scheduler is not None and checkpoint.get("scheduler_state_dict") is not None:
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+        # Load beta if it was saved (for consistency check)
+        saved_beta = checkpoint.get("beta")
+        if saved_beta is not None and saved_beta != self.beta:
+            print(f"Warning: Checkpoint beta={saved_beta} differs from current beta={self.beta}")
+
+        # Set best validation loss from checkpoint
+        self.best_val_loss = checkpoint.get("val_loss", float('inf'))
+
+        # Return the epoch to resume from
+        resume_epoch = checkpoint.get("epoch", 0)
+        self.start_epoch = resume_epoch
+        print(f"Resuming from epoch {resume_epoch} with val_loss={self.best_val_loss:.6f}")
+
+        return resume_epoch
+
     def train_epoch(self, train_loader: DataLoader, max_steps: Optional[int] = None) -> Dict[str, float]:
         """Run one training epoch.
 
@@ -163,7 +207,7 @@ class Trainer:
         Args:
             train_loader: DataLoader for training data.
             val_loader: DataLoader for validation data.
-            epochs: Number of epochs to train.
+            epochs: Total number of epochs to train (not additional epochs).
             max_steps: Optional maximum steps per epoch.
             save_dir: Directory to save model and history.
             model_name: Base name for saved files.
@@ -172,7 +216,7 @@ class Trainer:
         Returns:
             Training history dictionary.
         """
-        for epoch in range(epochs):
+        for epoch in range(self.start_epoch, epochs):
             train_metrics = self.train_epoch(train_loader, max_steps)
             val_metrics = self.validate(val_loader)
 
@@ -273,13 +317,17 @@ class Trainer:
                 "epoch", "train_total", "train_recon", "train_kl",
                 "val_total", "val_recon", "val_kl"
             ])
-            for ep in range(epochs):
+            # History only contains entries for epochs we actually ran
+            num_recorded = len(self.history["train_total"])
+            for i in range(num_recorded):
+                # Epoch number accounts for any resumed training
+                epoch_num = self.start_epoch + i + 1
                 writer.writerow([
-                    ep + 1,
-                    self.history["train_total"][ep],
-                    self.history["train_recon"][ep],
-                    self.history["train_kl"][ep],
-                    self.history["val_total"][ep],
-                    self.history["val_recon"][ep],
-                    self.history["val_kl"][ep],
+                    epoch_num,
+                    self.history["train_total"][i],
+                    self.history["train_recon"][i],
+                    self.history["train_kl"][i],
+                    self.history["val_total"][i],
+                    self.history["val_recon"][i],
+                    self.history["val_kl"][i],
                 ])
