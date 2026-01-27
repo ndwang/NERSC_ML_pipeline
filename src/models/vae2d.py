@@ -148,6 +148,7 @@ class VAE2D(nn.Module):
         batch_norm = bool(model_config.get('batch_norm', True))
         dropout_rate = float(model_config.get('dropout_rate', 0.0))
         self.weight_init = str(model_config.get('weight_init', 'kaiming_normal'))
+        output_activation = str(model_config.get('output_activation', 'sigmoid'))
         self.use_reparameterization = bool(model_config.get('use_reparameterization', True))
 
         if self.input_size % (2 ** len(hidden_channels)) != 0:
@@ -210,7 +211,7 @@ class VAE2D(nn.Module):
         )
 
         # Output normalization
-        self.output_normalization = get_activation('sigmoid')
+        self.output_normalization = get_activation(output_activation)
 
         # Initialize weights
         self._initialize_weights()

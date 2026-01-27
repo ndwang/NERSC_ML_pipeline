@@ -18,6 +18,7 @@ class ModelConfig(BaseModel):
     input_size: int = Field(default=64, ge=1)
     kernel_size: int = Field(default=3, ge=1)
     activation: str = "relu"
+    output_activation: str = "sigmoid"
     batch_norm: bool = True
     dropout_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     weight_init: Literal["kaiming_normal", "xavier_normal", "xavier_uniform"] = "kaiming_normal"
@@ -60,7 +61,7 @@ class WandbConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
     enabled: bool = False
-    project: str = "vae-training"
+    project: str = "beam-vae"
     entity: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     notes: Optional[str] = None
@@ -72,7 +73,7 @@ class TrainingConfig(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    epochs: int = Field(default=300, ge=1)
+    epochs: int = Field(default=500, ge=1)
     batch_size: int = Field(default=256, ge=1)
     lr: float = Field(default=5e-4, gt=0.0)
     weight_decay: float = Field(default=1e-4, ge=0.0)
@@ -93,7 +94,9 @@ class DataConfig(BaseModel):
 
     model_config = {"extra": "forbid"}
 
+    name: Optional[str] = None
     path: str
+    scaler_path: Optional[str] = None
     channels: int = Field(default=15, ge=1)
     height: int = Field(default=64, ge=1)
     width: int = Field(default=64, ge=1)
