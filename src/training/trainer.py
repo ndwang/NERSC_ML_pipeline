@@ -264,17 +264,11 @@ class Trainer:
                     self.best_val_loss = val_metrics["total"]
                     best_path = save_dir / f"{model_name}_best.pth"
                     self._save_checkpoint(best_path, epoch + 1, train_metrics, val_metrics)
-                    self.logger_callback.log_checkpoint_metadata(
-                        best_path, epoch + 1, val_metrics["total"], is_best=True
-                    )
 
                 # Periodic checkpoint
                 if (epoch + 1) % checkpoint_freq == 0:
                     ckpt_path = save_dir / f"{model_name}_epoch{epoch + 1}.pth"
                     self._save_checkpoint(ckpt_path, epoch + 1, train_metrics, val_metrics)
-                    self.logger_callback.log_checkpoint_metadata(
-                        ckpt_path, epoch + 1, val_metrics["total"], is_best=False
-                    )
 
         # Save final model and history
         if save_dir is not None:
