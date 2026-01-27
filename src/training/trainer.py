@@ -216,7 +216,8 @@ class Trainer:
         Returns:
             Training history dictionary.
         """
-        for epoch in range(self.start_epoch, epochs):
+        epoch_bar = tqdm(range(self.start_epoch, epochs), desc="Epochs", unit="epoch")
+        for epoch in epoch_bar:
             train_metrics = self.train_epoch(train_loader, max_steps)
             val_metrics = self.validate(val_loader)
 
@@ -236,11 +237,10 @@ class Trainer:
                     self.scheduler.step()
 
             current_lr = self.optimizer.param_groups[0]['lr']
-            print(
-                f"Epoch {epoch + 1}/{epochs} | "
-                f"Train: {train_metrics['total']:.6f} | "
-                f"Val: {val_metrics['total']:.6f} | "
-                f"LR: {current_lr:.2e}"
+            epoch_bar.set_postfix(
+                train=f"{train_metrics['total']:.4f}",
+                val=f"{val_metrics['total']:.4f}",
+                lr=f"{current_lr:.1e}",
             )
 
             # Log metrics to callback
@@ -319,7 +319,7 @@ class Trainer:
             "val_kl_loss": val_metrics["kl"],
             "beta": self.beta,
         }, path)
-        print(f"Checkpoint saved: {path}")
+        tqdm.write(f"Checkpoint saved: {path}")
 
     def _save_history(self, path: Path, epochs: int) -> None:
         """Save training history to CSV file."""
