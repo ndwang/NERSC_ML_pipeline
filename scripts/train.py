@@ -107,8 +107,9 @@ def main():
     scales_path = data_cfg.get('scales_path')
     if not scales_path:
         raise ValueError("Scales path not specified in config (data.scales_path)")
+    centroids_path = data_cfg.get('centroids_path')
 
-    full_dataset = FrequencyMapDataset(dataset_path, scales_path)
+    full_dataset = FrequencyMapDataset(dataset_path, scales_path, centroids_path)
     n_samples = len(full_dataset)
     val_split = training_cfg.get('val_split', 0.1)
     val_size = int(val_split * n_samples)
@@ -197,6 +198,7 @@ def main():
         device=device,
         beta=training_cfg.get('beta', 0.0),
         gamma=training_cfg.get('gamma', 0.0),
+        delta=training_cfg.get('delta', 0.0),
         loss_type=training_cfg.get('loss_type', 'mse'),
         grad_clip=training_cfg.get('grad_clip', 1.0),
         logger_callback=logger_callback,

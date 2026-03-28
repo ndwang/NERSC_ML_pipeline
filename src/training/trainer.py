@@ -38,6 +38,7 @@ class Trainer:
         device: torch.device = None,
         beta: float = 0.0,
         gamma: float = 0.0,
+        delta: float = 0.0,
         loss_type: str = "mse",
         grad_clip: float = 1.0,
         logger_callback: Optional["LoggingCallback"] = None,
@@ -50,6 +51,7 @@ class Trainer:
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.beta = beta
         self.gamma = gamma
+        self.delta = delta
         self.loss_type = loss_type
         self.grad_clip = grad_clip
 
@@ -77,8 +79,8 @@ class Trainer:
             torch.backends.cudnn.benchmark = True
 
         self.history = {
-            "train_total": [], "train_recon": [], "train_kl": [], "train_scale": [],
-            "val_total": [], "val_recon": [], "val_kl": [], "val_scale": [],
+            "train_total": [], "train_recon": [], "train_kl": [], "train_scale": [], "train_centroid": [],
+            "val_total": [], "val_recon": [], "val_kl": [], "val_scale": [], "val_centroid": [],
         }
 
         # Track starting epoch for resume functionality
@@ -150,22 +152,25 @@ class Trainer:
         total_recon = 0.0
         total_kl = 0.0
         total_scale = 0.0
+        total_centroid = 0.0
         n_samples = 0
 
         loop = tqdm(train_loader, desc="Training", leave=False)
-        for step, (maps, scales) in enumerate(loop):
+        for step, (maps, scales, centroids) in enumerate(loop):
             if max_steps is not None and step >= max_steps:
                 break
 
             maps = maps.to(self.device, non_blocking=True)
             scales = scales.to(self.device, non_blocking=True)
+            centroids = centroids.to(self.device, non_blocking=True)
             self.optimizer.zero_grad(set_to_none=True)
 
             with torch.amp.autocast("cuda", enabled=self.use_amp):
-                recon, pred_scales, mu, logvar = self.model(maps, scales)
-                loss, recon_loss, kl_loss, s_loss = vae_loss(
+                recon, pred_scales, pred_centroids, mu, logvar = self.model(maps, scales, centroids)
+                loss, recon_loss, kl_loss, s_loss, c_loss = vae_loss(
                     recon, maps, mu, logvar, self.beta, self.loss_type,
                     pred_scales=pred_scales, target_scales=scales, gamma=self.gamma,
+                    pred_centroids=pred_centroids, target_centroids=centroids, delta=self.delta,
                 )
 
             if torch.isnan(loss):
@@ -189,6 +194,7 @@ class Trainer:
             total_recon += recon_loss.item() * batch_size
             total_kl += kl_loss.item() * batch_size
             total_scale += s_loss.item() * batch_size
+            total_centroid += c_loss.item() * batch_size
             n_samples += batch_size
 
         return {
@@ -196,6 +202,7 @@ class Trainer:
             "recon": total_recon / n_samples,
             "kl": total_kl / n_samples,
             "scale": total_scale / n_samples,
+            "centroid": total_centroid / n_samples,
         }
 
     @torch.no_grad()
@@ -213,16 +220,19 @@ class Trainer:
         total_recon = 0.0
         total_kl = 0.0
         total_scale = 0.0
+        total_centroid = 0.0
         n_samples = 0
 
-        for maps, scales in val_loader:
+        for maps, scales, centroids in val_loader:
             maps = maps.to(self.device, non_blocking=True)
             scales = scales.to(self.device, non_blocking=True)
+            centroids = centroids.to(self.device, non_blocking=True)
             with torch.amp.autocast("cuda", enabled=self.use_amp):
-                recon, pred_scales, mu, logvar = self.model(maps, scales)
-                loss, recon_loss, kl_loss, s_loss = vae_loss(
+                recon, pred_scales, pred_centroids, mu, logvar = self.model(maps, scales, centroids)
+                loss, recon_loss, kl_loss, s_loss, c_loss = vae_loss(
                     recon, maps, mu, logvar, self.beta, self.loss_type,
                     pred_scales=pred_scales, target_scales=scales, gamma=self.gamma,
+                    pred_centroids=pred_centroids, target_centroids=centroids, delta=self.delta,
                 )
 
             batch_size = maps.size(0)
@@ -230,6 +240,7 @@ class Trainer:
             total_recon += recon_loss.item() * batch_size
             total_kl += kl_loss.item() * batch_size
             total_scale += s_loss.item() * batch_size
+            total_centroid += c_loss.item() * batch_size
             n_samples += batch_size
 
         return {
@@ -237,6 +248,7 @@ class Trainer:
             "recon": total_recon / n_samples,
             "kl": total_kl / n_samples,
             "scale": total_scale / n_samples,
+            "centroid": total_centroid / n_samples,
         }
 
     def fit(
@@ -269,14 +281,9 @@ class Trainer:
             val_metrics = self.validate(val_loader)
 
             # Update history
-            self.history["train_total"].append(train_metrics["total"])
-            self.history["train_recon"].append(train_metrics["recon"])
-            self.history["train_kl"].append(train_metrics["kl"])
-            self.history["train_scale"].append(train_metrics["scale"])
-            self.history["val_total"].append(val_metrics["total"])
-            self.history["val_recon"].append(val_metrics["recon"])
-            self.history["val_kl"].append(val_metrics["kl"])
-            self.history["val_scale"].append(val_metrics["scale"])
+            for split, metrics in [("train", train_metrics), ("val", val_metrics)]:
+                for key in ["total", "recon", "kl", "scale", "centroid"]:
+                    self.history[f"{split}_{key}"].append(metrics[key])
 
             # Update scheduler
             if self.scheduler is not None:
@@ -298,10 +305,12 @@ class Trainer:
                 "train/recon_loss": train_metrics["recon"],
                 "train/kl_loss": train_metrics["kl"],
                 "train/scale_loss": train_metrics["scale"],
+                "train/centroid_loss": train_metrics["centroid"],
                 "val/total_loss": val_metrics["total"],
                 "val/recon_loss": val_metrics["recon"],
                 "val/kl_loss": val_metrics["kl"],
                 "val/scale_loss": val_metrics["scale"],
+                "val/centroid_loss": val_metrics["centroid"],
                 "learning_rate": current_lr,
             }, step=epoch + 1)
 
@@ -361,12 +370,15 @@ class Trainer:
             "train_recon_loss": train_metrics["recon"],
             "train_kl_loss": train_metrics["kl"],
             "train_scale_loss": train_metrics["scale"],
+            "train_centroid_loss": train_metrics["centroid"],
             "val_loss": val_metrics["total"],
             "val_recon_loss": val_metrics["recon"],
             "val_kl_loss": val_metrics["kl"],
             "val_scale_loss": val_metrics["scale"],
+            "val_centroid_loss": val_metrics["centroid"],
             "beta": self.beta,
             "gamma": self.gamma,
+            "delta": self.delta,
         }, path)
         tqdm.write(f"Checkpoint saved: {path}")
 
@@ -374,23 +386,16 @@ class Trainer:
         """Save training history to CSV file."""
         with open(path, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow([
-                "epoch", "train_total", "train_recon", "train_kl", "train_scale",
-                "val_total", "val_recon", "val_kl", "val_scale",
-            ])
+            fields = ["total", "recon", "kl", "scale", "centroid"]
+            header = ["epoch"] + [f"train_{f}" for f in fields] + [f"val_{f}" for f in fields]
+            writer.writerow(header)
             # History only contains entries for epochs we actually ran
             num_recorded = len(self.history["train_total"])
             for i in range(num_recorded):
                 # Epoch number accounts for any resumed training
                 epoch_num = self.start_epoch + i + 1
-                writer.writerow([
-                    epoch_num,
-                    self.history["train_total"][i],
-                    self.history["train_recon"][i],
-                    self.history["train_kl"][i],
-                    self.history["train_scale"][i],
-                    self.history["val_total"][i],
-                    self.history["val_recon"][i],
-                    self.history["val_kl"][i],
-                    self.history["val_scale"][i],
-                ])
+                row = [epoch_num]
+                for split in ["train", "val"]:
+                    for f in fields:
+                        row.append(self.history[f"{split}_{f}"][i])
+                writer.writerow(row)

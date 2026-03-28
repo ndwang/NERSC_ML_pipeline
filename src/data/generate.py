@@ -75,11 +75,13 @@ def generate_frequency_maps_analytic(bins=64, Sigma=None, n_sigma=4, seed=None):
     Returns:
         maps: (15, bins, bins) array of normalized density maps.
         scales: (6,) array of per-dimension standard deviations.
+        centroids: (6,) array of zeros (analytic maps are centered by construction).
     """
     if Sigma is None:
         Sigma = build_covariance(generate_random=True, seed=seed)
 
     scales = np.sqrt(np.diag(Sigma))  # (6,)
+    centroids = np.zeros(6, dtype=np.float64)  # always centered
 
     maps = np.empty((len(PLANE_NAMES), bins, bins), dtype=np.float64)
     for ch, name in enumerate(PLANE_NAMES):
@@ -90,7 +92,7 @@ def generate_frequency_maps_analytic(bins=64, Sigma=None, n_sigma=4, seed=None):
         Sigma_2x2 = Sigma[np.ix_([i, j], [i, j])]
         maps[ch] = gaussian_2d_density(X, Y, Sigma_2x2)
 
-    return maps, scales
+    return maps, scales, centroids
 
 
 def generate_dataset(filename, n_samples=10000, bins=64, seed=42):
@@ -109,18 +111,22 @@ def generate_dataset(filename, n_samples=10000, bins=64, seed=42):
     rng = np.random.default_rng(seed)
     all_maps = np.empty((n_samples, len(PLANE_NAMES), bins, bins), dtype=np.float32)
     all_scales = np.empty((n_samples, 6), dtype=np.float32)
+    all_centroids = np.empty((n_samples, 6), dtype=np.float32)
 
     for idx in range(n_samples):
         sample_seed = int(rng.integers(0, 2**31))
-        m, s = generate_frequency_maps_analytic(bins=bins, seed=sample_seed)
+        m, s, c = generate_frequency_maps_analytic(bins=bins, seed=sample_seed)
         all_maps[idx] = m.astype(np.float32)
         all_scales[idx] = s.astype(np.float32)
+        all_centroids[idx] = c.astype(np.float32)
 
     maps_path = f"{filename}_maps.npy"
     scales_path = f"{filename}_scales.npy"
+    centroids_path = f"{filename}_centroids.npy"
     np.save(maps_path, all_maps)
     np.save(scales_path, all_scales)
-    print(f"Saved {n_samples} samples: {maps_path}, {scales_path}")
+    np.save(centroids_path, all_centroids)
+    print(f"Saved {n_samples} samples: {maps_path}, {scales_path}, {centroids_path}")
 
 
 if __name__ == "__main__":

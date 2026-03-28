@@ -63,6 +63,24 @@ def scale_loss(
     return F.mse_loss(pred_scales, torch.log(target_scales))
 
 
+def centroid_loss(
+    pred_centroids: torch.Tensor,
+    target_centroids: torch.Tensor,
+) -> torch.Tensor:
+    """Compute centroid reconstruction loss.
+
+    MSE on raw centroid values (beam orbit positions).
+
+    Args:
+        pred_centroids: (B, n_centroids) predicted centroids from decoder.
+        target_centroids: (B, n_centroids) ground-truth centroids.
+
+    Returns:
+        Scalar loss tensor.
+    """
+    return F.mse_loss(pred_centroids, target_centroids)
+
+
 def vae_loss(
     recon: torch.Tensor,
     target: torch.Tensor,
@@ -73,8 +91,11 @@ def vae_loss(
     pred_scales: torch.Tensor = None,
     target_scales: torch.Tensor = None,
     gamma: float = 0.0,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Compute total VAE loss (reconstruction + KL divergence + scale loss).
+    pred_centroids: torch.Tensor = None,
+    target_centroids: torch.Tensor = None,
+    delta: float = 0.0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compute total VAE loss (reconstruction + KL + scale + centroid).
 
     Args:
         recon: Reconstructed tensor from decoder.
@@ -86,9 +107,12 @@ def vae_loss(
         pred_scales: (B, n_scales) predicted scales from decoder.
         target_scales: (B, n_scales) ground-truth scales.
         gamma: Weight for scale reconstruction loss.
+        pred_centroids: (B, n_centroids) predicted centroids from decoder.
+        target_centroids: (B, n_centroids) ground-truth centroids.
+        delta: Weight for centroid reconstruction loss.
 
     Returns:
-        Tuple of (total_loss, recon_loss, kl_loss, scale_loss_val).
+        Tuple of (total_loss, recon_loss, kl_loss, scale_loss_val, centroid_loss_val).
     """
     recon_loss = reconstruction_loss(recon, target, loss_type)
     kl_loss = kl_divergence(mu, logvar)
@@ -97,6 +121,10 @@ def vae_loss(
     if pred_scales is not None and target_scales is not None and gamma > 0:
         s_loss = scale_loss(pred_scales, target_scales)
 
-    total_loss = recon_loss + beta * kl_loss + gamma * s_loss
+    c_loss = torch.tensor(0.0, device=recon.device)
+    if pred_centroids is not None and target_centroids is not None and delta > 0:
+        c_loss = centroid_loss(pred_centroids, target_centroids)
 
-    return total_loss, recon_loss, kl_loss, s_loss
+    total_loss = recon_loss + beta * kl_loss + gamma * s_loss + delta * c_loss
+
+    return total_loss, recon_loss, kl_loss, s_loss, c_loss

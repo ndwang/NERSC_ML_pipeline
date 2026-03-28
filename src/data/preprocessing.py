@@ -39,12 +39,17 @@ def particles_to_frequency_maps(particles, bins=64, n_sigma=4):
     Returns:
         maps: (15, bins, bins) array of normalized frequency maps.
         scales: (6,) array of per-dimension standard deviations.
+        centroids: (6,) array of per-dimension means (beam orbit).
     """
     particles = np.asarray(particles)
     if particles.ndim != 2 or particles.shape[1] != 6:
         raise ValueError(f"Expected (N, 6) array, got {particles.shape}")
 
+    centroids = np.mean(particles, axis=0)  # (6,)
     scales = np.std(particles, axis=0)  # (6,)
+
+    # Center particles before histogramming so maps are always centered
+    centered = particles - centroids
 
     maps = np.empty((len(PLANE_NAMES), bins, bins), dtype=np.float64)
     for ch, name in enumerate(PLANE_NAMES):
@@ -52,7 +57,7 @@ def particles_to_frequency_maps(particles, bins=64, n_sigma=4):
         range_i = [-n_sigma * scales[i], n_sigma * scales[i]]
         range_j = [-n_sigma * scales[j], n_sigma * scales[j]]
         hist, _, _ = np.histogram2d(
-            particles[:, i], particles[:, j],
+            centered[:, i], centered[:, j],
             bins=bins, range=[range_i, range_j],
         )
         total = hist.sum()
@@ -60,4 +65,4 @@ def particles_to_frequency_maps(particles, bins=64, n_sigma=4):
             hist /= total
         maps[ch] = hist
 
-    return maps, scales
+    return maps, scales, centroids

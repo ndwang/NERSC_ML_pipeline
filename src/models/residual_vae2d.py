@@ -157,6 +157,7 @@ class ResidualVAE2D(nn.Module):
         output_activation = str(model_config.get('output_activation', 'sigmoid'))
         self.use_reparameterization = bool(model_config.get('use_reparameterization', True))
         self.n_scales = int(model_config.get('n_scales', 6))
+        self.n_centroids = int(model_config.get('n_centroids', 6))
 
         if self.input_size % (2 ** len(hidden_channels)) != 0:
             raise ValueError(f"Input size {self.input_size} incompatible with {len(hidden_channels)} downsampling layers.")
@@ -185,7 +186,7 @@ class ResidualVAE2D(nn.Module):
         self.decoder_start_hw: int = self.input_size // (2 ** len(hidden_channels))
         bottleneck_features = hidden_channels[-1] * self.decoder_start_hw * self.decoder_start_hw
         
-        self.fc_bottleneck = nn.Linear(bottleneck_features + self.n_scales, self.latent_dim)
+        self.fc_bottleneck = nn.Linear(bottleneck_features + self.n_scales + self.n_centroids, self.latent_dim)
         self.bottleneck_activation = get_activation(activation)
         
         self.fc_mu = nn.Linear(self.latent_dim, self.latent_dim)
@@ -196,6 +197,9 @@ class ResidualVAE2D(nn.Module):
 
         # Scale prediction head: recovers physical scales from latent vector
         self.scale_head = nn.Linear(self.latent_dim, self.n_scales)
+
+        # Centroid prediction head: recovers beam orbit from latent vector
+        self.centroid_head = nn.Linear(self.latent_dim, self.n_centroids)
 
         self.decoder_blocks: nn.ModuleList = nn.ModuleList()
         rev_channels = list(reversed(hidden_channels))
@@ -238,13 +242,13 @@ class ResidualVAE2D(nn.Module):
         summary = self.get_model_summary()
         logger.info(f"VAE2D (Residual) initialized with {summary['total_parameters']:,} params")
 
-    def encode(self, x: torch.Tensor, scales: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def encode(self, x: torch.Tensor, scales: torch.Tensor, centroids: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         current = x
         for block in self.encoder_blocks:
             current = block(current)
 
         h = current.flatten(1)  # (B, bottleneck_features)
-        h = torch.cat([h, scales], dim=1)  # (B, bottleneck_features + n_scales)
+        h = torch.cat([h, scales, centroids], dim=1)  # (B, bottleneck_features + n_scales + n_centroids)
         h = self.fc_bottleneck(h)
         h = self.bottleneck_activation(h)
         mu = self.fc_mu(h)
@@ -259,8 +263,9 @@ class ResidualVAE2D(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def decode(self, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def decode(self, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         pred_scales = self.scale_head(z)  # (B, n_scales)
+        pred_centroids = self.centroid_head(z)  # (B, n_centroids)
         h = self.fc_proj(z)
         h = h.view(z.size(0), -1, self.decoder_start_hw, self.decoder_start_hw)
 
@@ -271,16 +276,16 @@ class ResidualVAE2D(nn.Module):
         current = self.final_upsample(current)
         current = self.final_conv(current)
 
-        return self.output_normalization(current), pred_scales
+        return self.output_normalization(current), pred_scales, pred_centroids
 
-    def forward(self, x: torch.Tensor, scales: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        mu, logvar = self.encode(x, scales)
+    def forward(self, x: torch.Tensor, scales: torch.Tensor, centroids: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        mu, logvar = self.encode(x, scales, centroids)
         if self.use_reparameterization and self.training:
             z = self.reparameterize(mu, logvar)
         else:
             z = mu
-        recon, pred_scales = self.decode(z)
-        return recon, pred_scales, mu, logvar
+        recon, pred_scales, pred_centroids = self.decode(z)
+        return recon, pred_scales, pred_centroids, mu, logvar
 
     def get_model_summary(self) -> Dict[str, Any]:
         total_params = sum(p.numel() for p in self.parameters())
