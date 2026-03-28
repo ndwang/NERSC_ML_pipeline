@@ -2,26 +2,33 @@
 
 import numpy as np
 
-# 15 unique 2D projections of 6D phase space (x, y, z, px, py, pz)
+# 15 unique 2D projections of 6D phase space
+# Data ordering: (x, x', y, y', z, δ)
+#   x  = horizontal position [m]
+#   x' = horizontal angle (px/p_ref) [rad]
+#   y  = vertical position [m]
+#   y' = vertical angle (py/p_ref) [rad]
+#   z  = longitudinal position, bunch-frame [m]
+#   δ  = relative momentum deviation (pz-p_ref)/p_ref [dimensionless]
 PLANE_MAP = {
-    # Position-Position
-    "x-y": (0, 1),
-    "x-z": (0, 2),
-    "y-z": (1, 2),
-    # Position-Momentum
-    "x-px": (0, 3),
-    "x-py": (0, 4),
-    "x-pz": (0, 5),
-    "y-px": (1, 3),
-    "y-py": (1, 4),
-    "y-pz": (1, 5),
-    "z-px": (2, 3),
-    "z-py": (2, 4),
-    "z-pz": (2, 5),
-    # Momentum-Momentum
-    "px-py": (3, 4),
-    "px-pz": (3, 5),
-    "py-pz": (4, 5),
+    # On-diagonal phase spaces
+    "x-x'": (0, 1),
+    "y-y'": (2, 3),
+    "z-d": (4, 5),
+    # Position-position
+    "x-y": (0, 2),
+    "x-z": (0, 4),
+    "y-z": (2, 4),
+    # Cross-plane coupling
+    "x-y'": (0, 3),
+    "x-d": (0, 5),
+    "x'-y": (1, 2),
+    "x'-y'": (1, 3),
+    "x'-z": (1, 4),
+    "x'-d": (1, 5),
+    "y-d": (2, 5),
+    "y'-z": (3, 4),
+    "y'-d": (3, 5),
 }
 
 # Sorted plane names define the canonical channel ordering
