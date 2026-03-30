@@ -5,10 +5,8 @@ Upgraded with Residual Blocks.
 
 from typing import Dict, Any, List, Optional, Tuple
 
-import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import logging
 
 from src.utils.activations import get_activation
@@ -353,5 +351,6 @@ if __name__ == "__main__":
     model = ResidualVAE2D(test_config)
     x = torch.randn(2, 15, 64, 64)
     scales = torch.rand(2, 6)
-    r, ps, m, l = model(x, scales)
-    print(f"In: {x.shape}, Out: {r.shape}, Pred scales: {ps.shape}")
+    centroids = torch.rand(2, 6)
+    r, ps, pc, m, l = model(x, scales, centroids)
+    print(f"In: {x.shape}, Out: {r.shape}, Pred scales: {ps.shape}, Pred centroids: {pc.shape}")

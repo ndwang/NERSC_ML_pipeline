@@ -91,24 +91,24 @@ def load_run(run_dir):
 
 @torch.no_grad()
 def encode_samples(model, dataset, n_samples, batch_size=256):
-    """Encode samples, returning mu, logvar, scales, centroids as numpy arrays."""
+    """Encode samples, returning maps, mu, logvar, scales, centroids as numpy arrays."""
     n = min(len(dataset), n_samples)
     subset = torch.utils.data.Subset(dataset, range(n))
     loader = DataLoader(subset, batch_size=batch_size, shuffle=False, num_workers=0)
     has_norm = not torch.equal(model.scale_std, torch.ones_like(model.scale_std))
-    all_mu, all_logvar, all_scales, all_centroids = [], [], [], []
+    all_maps, all_mu, all_logvar, all_scales, all_centroids = [], [], [], [], []
     for maps, scales, centroids in loader:
         mu, logvar = model.encode(maps, scales, centroids)
+        all_maps.append(maps.numpy())
         all_mu.append(mu.cpu().numpy())
         all_logvar.append(logvar.cpu().numpy())
-        # Return physical values for downstream analysis (PCA coloring, Twiss)
         if has_norm:
             all_scales.append(model.denormalize_scales(scales).cpu().numpy())
             all_centroids.append(model.denormalize_centroids(centroids).cpu().numpy())
         else:
             all_scales.append(scales.numpy())
             all_centroids.append(centroids.numpy())
-    return (np.concatenate(all_mu), np.concatenate(all_logvar),
+    return (np.concatenate(all_maps), np.concatenate(all_mu), np.concatenate(all_logvar),
             np.concatenate(all_scales), np.concatenate(all_centroids))
 
 
@@ -228,7 +228,7 @@ def analyze_reconstruction(model, dataset, output_dir, n_vis=5, n_eval=50):
 def analyze_latent_space(model, dataset, output_dir, n_samples=5000):
     """PCA/UMAP of latent vectors colored by scales."""
     print("\n--- Latent Space Structure ---")
-    mu, _, scales, centroids = encode_samples(model, dataset, n_samples)
+    all_maps, mu, _, scales, centroids = encode_samples(model, dataset, n_samples)
     n_scales = scales.shape[1]
 
     from sklearn.decomposition import PCA
@@ -253,17 +253,7 @@ def analyze_latent_space(model, dataset, output_dir, n_samples=5000):
     plt.close(fig)
 
     # PCA colored by Twiss parameters
-    # Compute ε, α, β from the on-diagonal phase space channels (x-x', y-y', z-δ)
-    subset = torch.utils.data.Subset(dataset, range(min(len(dataset), n_samples)))
-    loader = DataLoader(subset, batch_size=256, shuffle=False, num_workers=0)
-    all_maps, all_sc = [], []
-    for maps_batch, scales_batch, _ in loader:
-        all_maps.append(maps_batch.numpy())
-        all_sc.append(scales_batch.numpy())
-    all_maps = np.concatenate(all_maps)
-    all_sc = np.concatenate(all_sc)
-
-    twiss = transverse_twiss_numpy(all_maps, all_sc)
+    twiss = transverse_twiss_numpy(all_maps, scales)
 
     fig, axes = plt.subplots(2, 3, figsize=(18, 11))
     for row, plane in enumerate(["x", "y"]):
@@ -344,7 +334,7 @@ def analyze_latent_space(model, dataset, output_dir, n_samples=5000):
 def analyze_latent_dims(model, dataset, output_dir, n_samples=5000):
     """Active vs dead dims, cumulative variance, logvar distribution."""
     print("\n--- Latent Dimension Utilization ---")
-    mu, logvar, _, _ = encode_samples(model, dataset, n_samples)
+    _, mu, logvar, _, _ = encode_samples(model, dataset, n_samples)
     latent_dim = mu.shape[1]
 
     mu_var = np.var(mu, axis=0)
@@ -488,10 +478,9 @@ def _scatter_and_stats(pred, true, labels, title, output_dir, filename):
     return mse, r2
 
 
-def analyze_scales(model, dataset, output_dir, n_samples=5000):
+def analyze_scales(output_dir, data):
     """Scale prediction scatter, MSE, error distributions, R²."""
     print("\n--- Scale Predictions ---")
-    data = run_inference(model, dataset, n_samples)
     labels = [f"Scale {i}" for i in range(data["pred_scales"].shape[1])]
     mse, r2 = _scatter_and_stats(
         data["pred_scales"], data["true_scales"],
@@ -501,10 +490,9 @@ def analyze_scales(model, dataset, output_dir, n_samples=5000):
         print(f"  {labels[d]}: MSE={mse[d]:.2e}, R\u00b2={r2[d]:.4f}")
 
 
-def analyze_centroids(model, dataset, output_dir, n_samples=5000):
+def analyze_centroids(output_dir, data):
     """Centroid prediction scatter, MSE, error distributions, R²."""
     print("\n--- Centroid Predictions ---")
-    data = run_inference(model, dataset, n_samples)
     n_dims = data["pred_centroids"].shape[1]
     labels = [f"Centroid {i}" for i in range(n_dims)]
     mse, r2 = _scatter_and_stats(
@@ -519,19 +507,13 @@ def analyze_centroids(model, dataset, output_dir, n_samples=5000):
 # Main
 # ──────────────────────────────────────────────────────────────
 
-ALL_ANALYSES = {
-    "recon": analyze_reconstruction,
-    "latent": analyze_latent_space,
-    "dims": analyze_latent_dims,
-    "scales": analyze_scales,
-    "centroids": analyze_centroids,
-}
+ALL_ANALYSES = ["recon", "latent", "dims", "scales", "centroids"]
 
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze a trained VAE run")
     parser.add_argument("run_dir", type=str, help="Path to run directory")
-    parser.add_argument("--only", nargs="+", choices=list(ALL_ANALYSES.keys()),
+    parser.add_argument("--only", nargs="+", choices=ALL_ANALYSES,
                         help="Run only specific analyses")
     parser.add_argument("--n-samples", type=int, default=5000,
                         help="Max validation samples for encoding/inference")
@@ -541,13 +523,22 @@ def main():
     output_dir = Path(args.run_dir) / "analysis"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    analyses = args.only or list(ALL_ANALYSES.keys())
-    for name in analyses:
-        fn = ALL_ANALYSES[name]
-        if name == "recon":
-            fn(model, val_dataset, output_dir)
-        else:
-            fn(model, val_dataset, output_dir, n_samples=args.n_samples)
+    analyses = args.only or ALL_ANALYSES
+
+    if "recon" in analyses:
+        analyze_reconstruction(model, val_dataset, output_dir)
+    if "latent" in analyses:
+        analyze_latent_space(model, val_dataset, output_dir, n_samples=args.n_samples)
+    if "dims" in analyses:
+        analyze_latent_dims(model, val_dataset, output_dir, n_samples=args.n_samples)
+
+    # Run inference once for both scale and centroid analysis
+    if "scales" in analyses or "centroids" in analyses:
+        inference_data = run_inference(model, val_dataset, args.n_samples)
+        if "scales" in analyses:
+            analyze_scales(output_dir, inference_data)
+        if "centroids" in analyses:
+            analyze_centroids(output_dir, inference_data)
 
     print(f"\nAll plots saved to {output_dir}")
 

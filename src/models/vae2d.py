@@ -9,10 +9,8 @@ upsamples using Upsample + Conv2d blocks. Designed for inputs like 15-channel
 
 from typing import Dict, Any, List, Optional, Tuple
 
-import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import logging
 from src.utils.activations import get_activation
 
@@ -356,9 +354,10 @@ if __name__ == "__main__":
     batch_size = 2
     x = torch.randn(batch_size, 15, 64, 64)
     scales = torch.rand(batch_size, 6)
-    print(f"Input shape: {x.shape}, Scales shape: {scales.shape}")
+    centroids = torch.rand(batch_size, 6)
     with torch.no_grad():
-        recon, pred_scales, mu, logvar = model(x, scales)
+        recon, pred_scales, pred_centroids, mu, logvar = model(x, scales, centroids)
         print(f"Recon shape: {recon.shape}")
         print(f"Pred scales shape: {pred_scales.shape}")
+        print(f"Pred centroids shape: {pred_centroids.shape}")
         print(f"Mu shape: {mu.shape}, LogVar shape: {logvar.shape}")
