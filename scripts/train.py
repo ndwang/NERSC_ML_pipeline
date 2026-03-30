@@ -211,6 +211,11 @@ def main():
         resume_path = Path(args.resume)
         trainer.load_checkpoint(resume_path)
 
+    # Record resume info and resolved run name in config for reproducibility
+    config['run_name'] = run_name
+    if args.resume:
+        config['resume_from'] = str(resume_path)
+
     # Save config to output directory
     save_config(config, output_dir / "config.yaml")
 
