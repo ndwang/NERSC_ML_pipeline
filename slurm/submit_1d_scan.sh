@@ -2,10 +2,10 @@
 #SBATCH --job-name=vae_1d_scan
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
-#SBATCH --time=12:00:00
+#SBATCH --time=06:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=4
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=16
 #SBATCH --gpus=4
 #SBATCH --constraint=gpu
 #SBATCH --qos=regular
@@ -21,16 +21,16 @@
 # ============================================
 
 # --- CONFIGURATION ---
-PARAM_NAME="model.latent_dim"       # Parameter to scan (dot notation)
-PARAM_VALUES=(32 128 256 512)      # Values to try
-FIXED_OVERRIDES="data=data/sectioned_10k.yaml training.beta=0 training.gamma=1e-3"
-SWEEP_GROUP="scan_$(echo $PARAM_NAME | sed 's/.*\.//')_$(date +%y%m%d_%H%M)"
+PARAM_NAME="model.latent_dim"           # Parameter to scan (dot notation)
+PARAM_VALUES=(32 64 128)                # Values to try
+FIXED_OVERRIDES="data=data/sectioned_10k.yaml training.lr=1e-3 training.beta=1e-5 training.gamma=1e-4 training.delta=1e-4 training.batch_size=512"
+SWEEP_GROUP="scan_latent_dim"
 
 cd /pscratch/sd/n/ndwang/vae
 ml load conda
 conda activate vae
 
-export SRUN_ARGS="--exact --ntasks 1 --gpus 1 --cpus-per-task 32"
+export SRUN_ARGS="--exact --ntasks 1 --gpus 1 --cpus-per-task 16"
 
 # Generate run commands
 run_single() {

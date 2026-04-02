@@ -1,7 +1,7 @@
 epochs: 500
-batch_size: 256
-num_workers: 8
-lr: 5.0e-4
+batch_size: 512
+num_workers: 4
+lr: 1.0e-3
 weight_decay: 1.0e-4
 beta: 0.0
 gamma: 1.0
