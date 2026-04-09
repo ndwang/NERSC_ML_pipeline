@@ -262,7 +262,7 @@ class ResidualVAE2D(nn.Module):
         h = self.fc_bottleneck(h)
         h = self.bottleneck_activation(h)
         mu = torch.clamp(self.fc_mu(h), min=-10, max=10)
-        logvar = torch.clamp(self.fc_logvar(h), min=-10, max=10)
+        logvar = torch.clamp(self.fc_logvar(h), min=-10, max=2)
         return mu, logvar
 
     @staticmethod

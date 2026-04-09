@@ -1,7 +1,7 @@
 name: vae2d
 input_channels: 15
 hidden_channels: [32, 64, 128, 256, 512]
-latent_dim: 64
+latent_dim: 256
 input_size: 64
 kernel_size: 3
 activation: relu
