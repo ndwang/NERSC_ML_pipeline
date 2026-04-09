@@ -154,6 +154,8 @@ def run_inference(model, dataset, n_samples, batch_size=256):
 
 def analyze_reconstruction(model, dataset, output_dir, n_vis=5, n_eval=50):
     """Per-channel MSE, spatial error heatmaps, side-by-side samples."""
+    from beam_vae.data.preprocessing import PLANE_NAMES
+
     print("\n--- Reconstruction Quality ---")
     data = run_inference(model, dataset, n_eval)
     inputs, recons = data["inputs"], data["recons"]
@@ -162,15 +164,17 @@ def analyze_reconstruction(model, dataset, output_dir, n_vis=5, n_eval=50):
 
     # Per-channel MSE
     per_ch_mse = (residuals ** 2).mean(axis=(0, 2, 3))
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(12, 5))
     bars = ax.bar(range(n_channels), per_ch_mse, color="steelblue", edgecolor="black", linewidth=0.5)
     for bar, val in zip(bars, per_ch_mse):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                f"{val:.2e}", ha="center", va="bottom", fontsize=7)
-    ax.set_xlabel("Channel")
-    ax.set_ylabel("MSE")
-    ax.set_title(f"Per-Channel MSE ({inputs.shape[0]} val samples)")
+                f"{val:.2e}", ha="center", va="bottom", fontsize=9)
+    ax.set_xlabel("Channel", fontsize=14)
+    ax.set_ylabel("MSE", fontsize=14)
+    ax.set_title(f"Per-Channel MSE ({inputs.shape[0]} val samples)", fontsize=16)
     ax.set_xticks(range(n_channels))
+    ax.set_xticklabels(PLANE_NAMES, rotation=45, ha="right", fontsize=11)
+    ax.tick_params(axis='y', labelsize=11)
     fig.tight_layout()
     fig.savefig(output_dir / "per_channel_mse.png", dpi=150)
     plt.close(fig)
@@ -180,11 +184,11 @@ def analyze_reconstruction(model, dataset, output_dir, n_vis=5, n_eval=50):
     ncols = 5
     nrows = int(np.ceil(n_channels / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 4 * nrows), constrained_layout=True)
-    fig.suptitle(f"Spatial Mean Absolute Error ({inputs.shape[0]} val samples)")
+    fig.suptitle(f"Spatial Mean Absolute Error ({inputs.shape[0]} val samples)", fontsize=18)
     for ch in range(n_channels):
         ax = axes.flat[ch]
         im = ax.imshow(mean_abs_res[ch], cmap="hot", aspect="equal")
-        ax.set_title(f"Ch {ch}", fontsize=10)
+        ax.set_title(PLANE_NAMES[ch], fontsize=13)
         ax.set_xticks([])
         ax.set_yticks([])
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -195,30 +199,30 @@ def analyze_reconstruction(model, dataset, output_dir, n_vis=5, n_eval=50):
 
     # Side-by-side for a few samples
     rng = np.random.default_rng(42)
-    vis_idx = sorted(rng.choice(inputs.shape[0], size=min(n_vis, inputs.shape[0]), replace=False))
+    vis_idx = [0] + sorted(rng.choice(inputs.shape[0], size=min(n_vis, inputs.shape[0]), replace=False))
     for si in vis_idx:
-        fig, axes = plt.subplots(n_channels, 3, figsize=(9, 3 * n_channels), constrained_layout=True)
-        fig.suptitle(f"Sample {si}  |  Input / Reconstruction / Residual")
+        fig, axes = plt.subplots(n_channels, 3, figsize=(18, 5 * n_channels), constrained_layout=True)
+        fig.suptitle(f"Sample {si}  |  Input / Reconstruction / Residual", fontsize=36)
         inp, rec, res = inputs[si], recons[si], residuals[si]
         for ch in range(n_channels):
             vmin = min(inp[ch].min(), rec[ch].min())
             vmax = max(inp[ch].max(), rec[ch].max())
             axes[ch, 0].imshow(inp[ch], vmin=vmin, vmax=vmax, cmap="viridis")
-            axes[ch, 0].set_ylabel(f"Ch {ch}", fontsize=8)
+            axes[ch, 0].set_ylabel(PLANE_NAMES[ch], fontsize=30)
             axes[ch, 1].imshow(rec[ch], vmin=vmin, vmax=vmax, cmap="viridis")
             axes[ch, 2].imshow(res[ch], cmap="RdBu_r")
             for ax in axes[ch]:
                 ax.set_xticks([])
                 ax.set_yticks([])
-        axes[0, 0].set_title("Input")
-        axes[0, 1].set_title("Reconstruction")
-        axes[0, 2].set_title("Residual")
+        axes[0, 0].set_title("Input", fontsize=32)
+        axes[0, 1].set_title("Reconstruction", fontsize=32)
+        axes[0, 2].set_title("Residual", fontsize=32)
         fig.savefig(output_dir / f"sidebyside_sample_{si}.png", dpi=120)
         plt.close(fig)
 
     print(f"  Overall MSE: {(residuals ** 2).mean():.2e}")
-    print(f"  Best channel:  {per_ch_mse.argmin()} (MSE={per_ch_mse.min():.2e})")
-    print(f"  Worst channel: {per_ch_mse.argmax()} (MSE={per_ch_mse.max():.2e})")
+    print(f"  Best channel:  {PLANE_NAMES[per_ch_mse.argmin()]} (MSE={per_ch_mse.min():.2e})")
+    print(f"  Worst channel: {PLANE_NAMES[per_ch_mse.argmax()]} (MSE={per_ch_mse.max():.2e})")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -226,71 +230,167 @@ def analyze_reconstruction(model, dataset, output_dir, n_vis=5, n_eval=50):
 # ──────────────────────────────────────────────────────────────
 
 def analyze_latent_space(model, dataset, output_dir, n_samples=5000):
-    """PCA/UMAP of latent vectors colored by scales."""
+    """Physics-aligned latent directions, PCA explained variance, UMAP."""
     print("\n--- Latent Space Structure ---")
-    all_maps, mu, _, scales, centroids = encode_samples(model, dataset, n_samples)
-    n_scales = scales.shape[1]
-
     from sklearn.decomposition import PCA
+    from sklearn.linear_model import LinearRegression
+    from matplotlib.patches import Patch
+
+    print("  Encoding samples...")
+    all_maps, mu, _, scales, centroids = encode_samples(model, dataset, n_samples)
+    print(f"  Encoded {mu.shape[0]} samples, latent_dim={mu.shape[1]}")
+    print("  Computing Twiss parameters...")
+    twiss_dict = transverse_twiss_numpy(all_maps, scales)
+
+    # ── Assemble physical parameter groups ──
+    coord_labels = ["x", "x'", "y", "y'", "z", "δ"]
+    scale_labels = [f"log σ_{c}" for c in coord_labels]
+    centroid_labels = [f"⟨{c}⟩" for c in coord_labels]
+    twiss_labels = ["ε_x", "α_x", "β_x", "ε_y", "α_y", "β_y"]
+
+    twiss_arr = np.column_stack([
+        twiss_dict["emit_x"], twiss_dict["alpha_x"], twiss_dict["beta_x"],
+        twiss_dict["emit_y"], twiss_dict["alpha_y"], twiss_dict["beta_y"],
+    ])
+
+    # Regress scales in log-space (matching the model's internal representation)
+    log_scales = np.log(scales)
+
+    param_groups = [
+        ("Scales", scale_labels, log_scales, "steelblue"),
+        ("Centroids", centroid_labels, centroids, "darkorange"),
+        ("Twiss", twiss_labels, twiss_arr, "forestgreen"),
+    ]
+
+    all_labels = scale_labels + centroid_labels + twiss_labels
+    all_params = np.column_stack([log_scales, centroids, twiss_arr])
+
+    # ── Fit linear regression for all parameters (R² + optional scatter) ──
+    print("  Fitting linear regressions...")
+    r2_all = {}
+    regs_by_group = {}
+    for group_name, labels, params, color in param_groups:
+        n_dims = len(labels)
+        regs = []
+        for d in range(n_dims):
+            reg = LinearRegression().fit(mu, params[:, d])
+            r2_all[labels[d]] = reg.score(mu, params[:, d])
+            regs.append(reg)
+        regs_by_group[group_name] = regs
+
+        # Only plot scatter for groups with non-trivial structure (skip R²≈1)
+        mean_r2 = np.mean([r2_all[l] for l in labels])
+        if mean_r2 > 0.999:
+            continue
+
+        nrows = int(np.ceil(n_dims / 3))
+        fig, axes = plt.subplots(nrows, 3, figsize=(15, 5 * nrows))
+        axes_flat = axes.flatten() if nrows > 1 else axes
+        for d in range(n_dims):
+            ax = axes_flat[d]
+            w = regs[d].coef_
+            proj = mu @ (w / np.linalg.norm(w))
+            ax.scatter(proj, params[:, d], s=4, alpha=0.4, color=color, rasterized=True)
+            ax.set_xlabel("Projection along best direction")
+            ax.set_ylabel(labels[d])
+            ax.set_title(f"{labels[d]}  (R² = {r2_all[labels[d]]:.4f})")
+        for d in range(n_dims, len(axes_flat)):
+            axes_flat[d].set_visible(False)
+        fig.suptitle(f"Best Linear Direction in Latent Space → {group_name}", fontsize=14)
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+        fig.savefig(output_dir / f"physics_direction_{group_name.lower()}.png", dpi=150)
+        plt.close(fig)
+
+    # ── R² summary bar chart ──
+    print("  Plotting R² summary...")
+    fig, ax = plt.subplots(figsize=(14, 5))
+    colors_flat = (["steelblue"] * len(scale_labels)
+                   + ["darkorange"] * len(centroid_labels)
+                   + ["forestgreen"] * len(twiss_labels))
+    r2_vals = [r2_all[n] for n in all_labels]
+    bars = ax.bar(range(len(all_labels)), r2_vals, color=colors_flat,
+                  edgecolor="black", linewidth=0.5)
+    for bar, val in zip(bars, r2_vals):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
+                f"{val:.3f}", ha="center", va="bottom", fontsize=7)
+    ax.set_xticks(range(len(all_labels)))
+    ax.set_xticklabels(all_labels, rotation=45, ha="right")
+    ax.set_ylabel("R²")
+    ax.set_ylim(0, 1.08)
+    ax.set_title("Linear Predictability of Physical Parameters from Latent Space")
+    ax.legend(handles=[
+        Patch(facecolor="steelblue", label="Scales"),
+        Patch(facecolor="darkorange", label="Centroids"),
+        Patch(facecolor="forestgreen", label="Twiss"),
+    ])
+    fig.tight_layout()
+    fig.savefig(output_dir / "physics_r2_summary.png", dpi=150)
+    plt.close(fig)
+
+    # ── Latent space scatter: PCA density ──
+    print("  Computing PCA and density plot...")
     pca = PCA(n_components=min(30, mu.shape[1]))
     coords = pca.fit_transform(mu)
 
-    # PCA colored by each scale
-    fig, axes = plt.subplots(2, 3, figsize=(18, 11))
-    for i, ax in enumerate(axes.ravel()):
-        if i >= n_scales:
-            ax.set_visible(False)
-            continue
-        sc = ax.scatter(coords[:, 0], coords[:, 1], c=scales[:, i],
-                        cmap="viridis", s=4, alpha=0.6, rasterized=True)
-        ax.set_xlabel("PC 1")
-        ax.set_ylabel("PC 2")
-        ax.set_title(f"Scale {i}")
-        fig.colorbar(sc, ax=ax, shrink=0.8)
-    fig.suptitle("PCA of Latent Space colored by scales")
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(output_dir / "pca_by_scales.png", dpi=150)
+    fig, ax = plt.subplots(figsize=(8, 7))
+    hb = ax.hexbin(coords[:, 0], coords[:, 1], gridsize=60, cmap="viridis",
+                    mincnt=1, rasterized=True)
+    ax.set_xlabel("PC 1")
+    ax.set_ylabel("PC 2")
+    ax.set_title("Beam Distribution in Latent Space (PCA)")
+    fig.colorbar(hb, ax=ax, label="Count")
+    fig.tight_layout()
+    fig.savefig(output_dir / "latent_density_pca.png", dpi=150)
     plt.close(fig)
 
-    # PCA colored by Twiss parameters
-    twiss = transverse_twiss_numpy(all_maps, scales)
+    # ── Latent space scatter: physics-aligned axes ──
+    print("  Plotting physics-aligned scatter (β_x vs α_x, color=ε_x)...")
+    # Project onto β_x and α_x directions, color by ε_x
+    regs_twiss = regs_by_group["Twiss"]
+    beta_x_idx = twiss_labels.index("β_x")
+    alpha_x_idx = twiss_labels.index("α_x")
+    emit_x_idx = twiss_labels.index("ε_x")
 
-    fig, axes = plt.subplots(2, 3, figsize=(18, 11))
-    for row, plane in enumerate(["x", "y"]):
-        for col, param in enumerate(["emit", "alpha", "beta"]):
-            ax = axes[row, col]
-            key = f"{param}_{plane}"
-            sc = ax.scatter(coords[:, 0], coords[:, 1], c=twiss[key],
-                            cmap="viridis", s=4, alpha=0.6, rasterized=True)
-            ax.set_xlabel("PC 1")
-            ax.set_ylabel("PC 2")
-            label = {"emit": "ε", "alpha": "α", "beta": "β"}[param]
-            ax.set_title(f"{label}_{plane}")
-            fig.colorbar(sc, ax=ax, shrink=0.8)
-    fig.suptitle("PCA of Latent Space colored by Twiss parameters")
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(output_dir / "pca_by_twiss.png", dpi=150)
+    w_beta = regs_twiss[beta_x_idx].coef_
+    w_alpha = regs_twiss[alpha_x_idx].coef_
+    proj_beta = mu @ (w_beta / np.linalg.norm(w_beta))
+    proj_alpha = mu @ (w_alpha / np.linalg.norm(w_alpha))
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+    sc = ax.scatter(proj_beta, proj_alpha, c=twiss_arr[:, emit_x_idx],
+                    cmap="viridis", s=4, alpha=0.5, rasterized=True)
+    ax.set_xlabel("Projection along β_x direction")
+    ax.set_ylabel("Projection along α_x direction")
+    ax.set_title("Beam Distribution in Latent Space (Physics-Aligned Axes)")
+    fig.colorbar(sc, ax=ax, label="ε_x")
+    fig.tight_layout()
+    fig.savefig(output_dir / "latent_scatter_twiss.png", dpi=150)
     plt.close(fig)
 
-    # PCA colored by each centroid
-    n_centroids = centroids.shape[1]
-    fig, axes = plt.subplots(2, 3, figsize=(18, 11))
-    for i, ax in enumerate(axes.ravel()):
-        if i >= n_centroids:
-            ax.set_visible(False)
-            continue
-        sc = ax.scatter(coords[:, 0], coords[:, 1], c=centroids[:, i],
-                        cmap="coolwarm", s=4, alpha=0.6, rasterized=True)
-        ax.set_xlabel("PC 1")
-        ax.set_ylabel("PC 2")
-        ax.set_title(f"Centroid {i}")
-        fig.colorbar(sc, ax=ax, shrink=0.8)
-    fig.suptitle("PCA of Latent Space colored by centroids")
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(output_dir / "pca_by_centroids.png", dpi=150)
+    # ── Correlation heatmap: physical parameters vs PCs ──
+    print("  Computing correlation heatmap...")
+    n_pcs = coords.shape[1]
+    n_total = all_params.shape[1]
+
+    corr = np.zeros((n_total, n_pcs))
+    for i in range(n_total):
+        for j in range(n_pcs):
+            corr[i, j] = np.corrcoef(all_params[:, i], coords[:, j])[0, 1]
+
+    fig, ax = plt.subplots(figsize=(16, 8))
+    im = ax.imshow(corr, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
+    ax.set_yticks(range(n_total))
+    ax.set_yticklabels(all_labels)
+    ax.set_xticks(range(n_pcs))
+    ax.set_xticklabels([f"PC {i+1}" for i in range(n_pcs)], rotation=90)
+    ax.set_title("Correlation: Physical Parameters vs Principal Components")
+    fig.colorbar(im, ax=ax, shrink=0.7, label="Correlation")
+    fig.tight_layout()
+    fig.savefig(output_dir / "physics_pc_correlation.png", dpi=150)
     plt.close(fig)
 
-    # Explained variance
+    # ── PCA explained variance ──
+    print("  Plotting PCA explained variance...")
     evr = pca.explained_variance_ratio_
     n = len(evr)
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -305,6 +405,12 @@ def analyze_latent_space(model, dataset, output_dir, n_samples=5000):
     plt.close(fig)
 
     print(f"  PC1: {evr[0]:.1%}, PC1-2: {evr[:2].sum():.1%}, PC1-10: {evr[:10].sum():.1%}")
+
+    # Print R² summary
+    print(f"\n  {'Parameter':<12} {'R²':>8}")
+    print(f"  {'-' * 20}")
+    for name in all_labels:
+        print(f"  {name:<12} {r2_all[name]:>8.4f}")
 
     # UMAP (optional)
     try:
