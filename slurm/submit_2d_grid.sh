@@ -16,19 +16,20 @@
 # ============================================
 # 2D GRID SEARCH
 # ============================================
-# Usage: sbatch submit_2d_grid.sh
-# Runs a grid of param1 x param2 combinations
+# Usage: sbatch slurm/submit_2d_grid.sh <param1_name> "<param1_values>" <param2_name> "<param2_values>" "<fixed_overrides>" <sweep_group>
+# Example: sbatch slurm/submit_2d_grid.sh "model.latent_dim" "16 32 64 128" "training.beta" "1e-7 1e-6 1e-5 1e-4" "data=data/linear_10k.yaml training.lr=1e-3" "grid_latent_beta"
 # ============================================
 
-# --- CONFIGURATION ---
-PARAM1_NAME="model.latent_dim"
-PARAM1_VALUES=(16 32 64 128)
-
-PARAM2_NAME="training.beta"
-PARAM2_VALUES=(1e-7 1e-6 1e-5 1e-4)
-
-FIXED_OVERRIDES=""  # Additional fixed overrides (optional)
-SWEEP_GROUP="grid_$(echo $PARAM1_NAME | sed 's/.*\.//')_$(echo $PARAM2_NAME | sed 's/.*\.//')_$(date +%y%m%d_%H%M)"
+if [[ $# -ne 6 ]]; then
+    echo "Usage: $0 <param1_name> <param1_values> <param2_name> <param2_values> <fixed_overrides> <sweep_group>" >&2
+    exit 1
+fi
+PARAM1_NAME="$1"
+IFS=' ' read -ra PARAM1_VALUES <<< "$2"
+PARAM2_NAME="$3"
+IFS=' ' read -ra PARAM2_VALUES <<< "$4"
+FIXED_OVERRIDES="$5"
+SWEEP_GROUP="$6"
 
 cd /pscratch/sd/n/ndwang/vae
 ml load conda

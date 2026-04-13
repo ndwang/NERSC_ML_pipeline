@@ -35,9 +35,14 @@ python scripts/train.py model=model/residual_vae2d.yaml
 python scripts/train.py --resume runs/my_run/vae_best.pth
 
 # Submit to SLURM (run from project root)
-sbatch slurm/submit_single.sh      # Single run
-sbatch slurm/submit_1d_scan.sh     # Parameter sweep
-sbatch slurm/submit_2d_grid.sh     # Grid search
+sbatch slurm/submit_single.sh <run_prefix> <sweep_group> "<overrides>"
+sbatch slurm/submit_single.sh "latent128" "scan_latent" "data=data/sectioned_10k.yaml model.latent_dim=128 training.lr=1e-3"
+
+sbatch slurm/submit_1d_scan.sh <param_name> "<values>" "<fixed_overrides>" <sweep_group>
+sbatch slurm/submit_1d_scan.sh "model.latent_dim" "32 64 128 256" "data=data/linear_10k.yaml training.lr=1e-3" "scan_latent_dim"
+
+sbatch slurm/submit_2d_grid.sh <param1_name> "<param1_values>" <param2_name> "<param2_values>" "<fixed_overrides>" <sweep_group>
+sbatch slurm/submit_2d_grid.sh "model.latent_dim" "16 32 64 128" "training.beta" "1e-7 1e-6 1e-5 1e-4" "data=data/linear_10k.yaml training.lr=1e-3" "grid_latent_beta"
 ```
 
 ## Post-Training Analysis

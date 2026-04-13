@@ -5,7 +5,7 @@
 #SBATCH --time=06:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=4
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=32
 #SBATCH --gpus=4
 #SBATCH --constraint=gpu
 #SBATCH --qos=regular
@@ -16,21 +16,24 @@
 # ============================================
 # 1D HYPERPARAMETER SCAN
 # ============================================
-# Usage: sbatch submit_1d_scan.sh
-# Runs multiple configs in parallel using GNU parallel
+# Usage: sbatch slurm/submit_1d_scan.sh <param_name> <values> <fixed_overrides> <sweep_group>
+# Example: sbatch slurm/submit_1d_scan.sh "model.latent_dim" "32 64 128 256" "data=data/linear_10k.yaml training.lr=1e-3" "scan_latent_dim"
 # ============================================
 
-# --- CONFIGURATION ---
-PARAM_NAME="model.latent_dim"           # Parameter to scan (dot notation)
-PARAM_VALUES=(32 64 128)                # Values to try
-FIXED_OVERRIDES="data=data/sectioned_10k.yaml training.lr=1e-3 training.beta=1e-5 training.gamma=1e-4 training.delta=1e-4 training.batch_size=512"
-SWEEP_GROUP="scan_latent_dim"
+if [[ $# -ne 4 ]]; then
+    echo "Usage: $0 <param_name> <values> <fixed_overrides> <sweep_group>" >&2
+    exit 1
+fi
+PARAM_NAME="$1"
+IFS=' ' read -ra PARAM_VALUES <<< "$2"
+FIXED_OVERRIDES="$3"
+SWEEP_GROUP="$4"
 
 cd /pscratch/sd/n/ndwang/vae
 ml load conda
 conda activate vae
 
-export SRUN_ARGS="--exact --ntasks 1 --gpus 1 --cpus-per-task 16"
+export SRUN_ARGS="--exact --ntasks 1 --gpus 1 --cpus-per-task 32"
 
 # Generate run commands
 run_single() {

@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gpus=1
 #SBATCH --constraint=gpu
-#SBATCH --qos=shared
+#SBATCH --qos=regular
 #SBATCH --account=m5089
 #SBATCH --mail-type=begin,end,fail
 #SBATCH --mail-user=nw285@cornell.edu
@@ -16,14 +16,17 @@
 # ============================================
 # SINGLE TRAINING RUN
 # ============================================
-# Usage: sbatch submit_single.sh
-# Modify the OVERRIDES variable below to change hyperparameters
+# Usage: sbatch slurm/submit_single.sh <run_prefix> <sweep_group> <overrides>
+# Example: sbatch slurm/submit_single.sh "latent128" "scan_latent" "data=data/sectioned_10k.yaml model.latent_dim=128 training.lr=1e-3"
 # ============================================
 
-# --- CONFIGURATION ---
-RUN_PREFIX="weighted_mse"                # Descriptive prefix for this run
-OVERRIDES="data=data/sectioned_10k.yaml model.latent_dim=256 training.lr=1e-3 training.beta=1e-5 training.gamma=1e-4 training.delta=1e-4 training.loss_type=weighted_mse"
-SWEEP_GROUP="loss_function"
+if [[ $# -ne 3 ]]; then
+    echo "Usage: $0 <run_prefix> <sweep_group> <overrides>" >&2
+    exit 1
+fi
+RUN_PREFIX="$1"
+SWEEP_GROUP="$2"
+OVERRIDES="$3"
 
 cd /pscratch/sd/n/ndwang/vae
 ml load conda
