@@ -81,6 +81,12 @@ Workflow: run `analyze_losses.py` first to identify interesting runs, then `anal
 - Location: `/pscratch/sd/n/ndwang/frequency_maps/`
 - Preprocessing: Min-max normalized, optionally log-transformed
 
+## Experiment Tracking
+
+`EXPERIMENTS.md` is the running log of all training runs and their conclusions. **Always update it:**
+- **Before** launching a new scan: write a prose section explaining the motivation, what question is being asked, what you expect to see and why, and what the result would imply either way
+- **After** runs complete: record the results and write a detailed analysis — what the numbers mean, whether the outcome matched expectations, what it implies about the model or training dynamics, and what to try next
+
 ## Conventions
 
 - Config overrides use dot notation: `model.latent_dim=64`
