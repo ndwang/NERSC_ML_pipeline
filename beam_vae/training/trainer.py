@@ -240,6 +240,13 @@ class Trainer:
                     loss_config=self.loss_config,
                 )
 
+            if torch.isnan(loss) or torch.isinf(loss):
+                raise ValueError(
+                    f"NaN/inf in validation loss — "
+                    f"recon={recon_loss.item():.4f}, kl={kl_loss.item():.4f}, "
+                    f"scale={s_loss.item():.4f}, centroid={c_loss.item():.4f}"
+                )
+
             batch_size = maps.size(0)
             total_loss += loss.item() * batch_size
             total_recon += recon_loss.item() * batch_size

@@ -53,6 +53,7 @@ def kl_divergence(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
     Returns:
         Scalar KL divergence loss.
     """
+    mu, logvar = mu.float(), logvar.float()
     return -0.5 * torch.mean(1 + logvar - mu.pow(2) - torch.exp(logvar))
 
 
