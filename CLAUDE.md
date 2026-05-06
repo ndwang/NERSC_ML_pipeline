@@ -38,11 +38,14 @@ python scripts/train.py --resume runs/my_run/vae_best.pth
 sbatch slurm/submit_single.sh <run_prefix> <sweep_group> "<overrides>"
 sbatch slurm/submit_single.sh "latent128" "scan_latent" "data=data/sectioned_10k.yaml model.latent_dim=128 training.lr=1e-3"
 
-sbatch slurm/submit_1d_scan.sh <param_name> "<values>" "<fixed_overrides>" <sweep_group>
-sbatch slurm/submit_1d_scan.sh "model.latent_dim" "32 64 128 256" "data=data/linear_10k.yaml training.lr=1e-3" "scan_latent_dim"
+bash slurm/submit_1d_scan.sh <param_name> "<values>" "<fixed_overrides>" <sweep_group>
+bash slurm/submit_1d_scan.sh "model.latent_dim" "32 64 128 256" "training.lr=1e-3" "scan_latent_dim"
 
-sbatch slurm/submit_2d_grid.sh <param1_name> "<param1_values>" <param2_name> "<param2_values>" "<fixed_overrides>" <sweep_group>
-sbatch slurm/submit_2d_grid.sh "model.latent_dim" "16 32 64 128" "training.beta" "1e-7 1e-6 1e-5 1e-4" "data=data/linear_10k.yaml training.lr=1e-3" "grid_latent_beta"
+bash slurm/submit_grid.sh <param1_name> "<param1_values>" <param2_name> "<param2_values>" "<fixed_overrides>" <sweep_group>
+bash slurm/submit_grid.sh "model.latent_dim" "128 256" "training.beta" "2e-6 5e-6 2e-5 5e-5" "training.lr=1e-3" "grid_latent_beta"
+
+# Both wrappers auto-compute the node count (ceil(n_runs / 4)) so all runs are parallel.
+# Override the time limit with --time HH:MM:SS as the first argument.
 ```
 
 ## Post-Training Analysis
