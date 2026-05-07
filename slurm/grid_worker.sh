@@ -37,7 +37,7 @@ run_combo() {
     local p2_short=$(echo $PARAM2_NAME | sed 's/.*\.//')
     local ts=$(date +%y%m%d_%H%M)
     local run_name="${p1_short}_${val1}_${p2_short}_${val2}_${ts}"
-    srun $SRUN_ARGS python scripts/train.py \
+    srun $SRUN_ARGS python -u scripts/train.py \
         ${PARAM1_NAME}=${val1} \
         ${PARAM2_NAME}=${val2} \
         run_name=${run_name} \

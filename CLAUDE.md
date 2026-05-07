@@ -46,6 +46,12 @@ bash slurm/submit_grid.sh "model.latent_dim" "128 256" "training.beta" "2e-6 5e-
 
 # Both wrappers auto-compute the node count (ceil(n_runs / 4)) so all runs are parallel.
 # Override the time limit with --time HH:MM:SS as the first argument.
+
+# Local multi-GPU launch (bypasses SLURM, logs to logs/)
+# Always use python -u: redirecting stdout to a file disables line buffering,
+# so without -u logs only appear when the process exits.
+CUDA_VISIBLE_DEVICES=0 python -u scripts/train.py training.beta=1e-6 > logs/beta1e-6.log 2>&1 &
+CUDA_VISIBLE_DEVICES=1 python -u scripts/train.py training.beta=2e-6 > logs/beta2e-6.log 2>&1 &
 ```
 
 ## Post-Training Analysis

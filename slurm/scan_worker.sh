@@ -33,7 +33,7 @@ run_single() {
     local param_short=$(echo $PARAM_NAME | sed 's/.*\.//')
     local ts=$(date +%y%m%d_%H%M)
     local run_name="${param_short}_${val}_${ts}"
-    srun $SRUN_ARGS python scripts/train.py \
+    srun $SRUN_ARGS python -u scripts/train.py \
         ${PARAM_NAME}=${val} \
         run_name=${run_name} \
         ${FIXED_OVERRIDES} \

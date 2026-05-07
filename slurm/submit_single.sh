@@ -36,7 +36,7 @@ conda activate vae
 RUN_NAME="${RUN_PREFIX}_$(date +%y%m%d_%H%M)"
 
 # Run training with W&B in offline mode
-python scripts/train.py $OVERRIDES run_name=${RUN_NAME} training.wandb.enabled=true training.wandb.group=${SWEEP_GROUP}
+python -u scripts/train.py $OVERRIDES run_name=${RUN_NAME} training.wandb.enabled=true training.wandb.group=${SWEEP_GROUP}
 
 # Upload W&B logs after training completes
 echo "Syncing W&B logs..."
