@@ -18,34 +18,53 @@ import matplotlib.colors as mcolors
 # Values: val metric at best epoch; None = not run.
 # SPECIAL: cells with a non-numeric outcome (collapse, crash, timeout).
 
-DIMS  = [128, 256, 512]
-BETAS = [0, 1e-6, 1e-5, 1e-4, 1e-3]
+DIMS  = [64, 128, 256, 512]
+BETAS = [0, 1e-6, 2e-6, 5e-6, 1e-5, 2e-5, 5e-5, 1e-4, 1e-3]
 
 # (dim, beta) → (val_recon, val_scale, val_centroid)
 DATA = {
+    # Scan 6 — dim=64 beta sweep
+    (64,  1e-6): (1.02e-5, 2.70e-5, 5.24e-5),  # partial collapse (KL=25.4)
+    (64,  2e-6): (9.5e-6,  3.24e-5, 5.88e-5),  # partial collapse (KL=5.78)
+    (64,  5e-6): (1.02e-5, 7.41e-5, 1.51e-4),
+    (64,  1e-5): (1.01e-5, 4.60e-5, 6.37e-4),
+
     # Scan 1 — dim=128 beta sweep
     (128, 0):    (9.9e-6,  7.6e-5,  8.8e-5),
     (128, 1e-6): (1.1e-5,  5.6e-5,  1.3e-4),
     (128, 1e-5): (9.6e-6,  6.1e-5,  1.1e-4),
     (128, 1e-4): (9.4e-6,  3.3e-5,  1.4e-4),
 
-    # Scan 2 / 3 — dim=256
+    # Scan 5 — dim=128 fine beta sweep
+    (128, 2e-6): (1.17e-5, 3.78e-5, 5.87e-5),
+    (128, 5e-6): (1.08e-5, 1.82e-5, 4.72e-5),
+    (128, 2e-5): (9.2e-6,  1.34e-4, 3.66e-4),
+    (128, 5e-5): (1.18e-5, 2.99e-4, 2.36e-3),
+
+    # Scan 2 / 3 / 4 / 5 — dim=256 (collapsed cells from Scan 4)
+    (256, 0):    (4.3e-4,  1.0e-2,  2.8e-2),  # collapsed epoch 9
+    (256, 1e-6): (3.5e-4,  4.1e-2,  7.9e-2),  # collapsed epoch 11
+    (256, 2e-6): (2.33e-4, 9.3e-3,  6.3e-2),  # collapsed epoch 13
+    (256, 5e-6): (2.68e-4, 2.58e-3, 1.0e-2),  # collapsed epoch 11
     (256, 1e-5): (7.9e-6,  2.1e-5,  7.3e-5),
+    (256, 2e-5): (9.51e-6, 3.87e-5, 2.53e-4),  # Scan 5 rerun, 500 epochs
+    (256, 5e-5): (9.97e-6, 1.11e-4, 7.76e-4),  # Scan 5 rerun, epoch-500 converged value
     (256, 1e-4): (9.9e-6,  2.9e-4,  1.5e-3),
     (256, 1e-3): (1.4e-5,  3.6e-2,  5.7e-2),
 
-    # Scan 4 — dim=512
+    # Scan 3 / 4 / 5 — dim=512 (512+1e-6 timed out at epoch 459)
+    (512, 1e-6): (9.9e-6,  1.9e-5,  4.8e-5),  # t/o epoch 459, not collapsed (KL=1.39)
     (512, 1e-5): (1.1e-5,  2.0e-5,  4.3e-5),
+    (512, 2e-5): (1.30e-5, 3.40e-5, 5.70e-5),  # Scan 5 rerun, 500 epochs
+    (512, 5e-5): (1.08e-5, 4.73e-5, 1.46e-4),  # Scan 5 rerun, 500 epochs
     (512, 1e-4): (1.5e-5,  3.5e-3,  5.5e-4),
 }
 
-# Cells with a special label instead of a numeric value.
-# "unreg" = unregularized failure (beta too low, z becomes noise); "crash" = NaN/exception; "t/o" = timed out
+# Cells with a special label overlaid on (or instead of) the numeric value.
+# "unreg" = posterior collapse (beta too low); "crash" = NaN/exception
+# "t/o" = timed out; "partial" = partial collapse, still shows numeric value
 SPECIAL = {
-    (256, 0):    "unreg",
-    (256, 1e-6): "unreg",
-    (512, 0):    "unreg",
-    (512, 1e-6): "t/o",
+    (512, 0): "unreg",  # collapsed before epoch 50, no CSV
 }
 
 # ── build arrays ──────────────────────────────────────────────────────────────
@@ -63,11 +82,11 @@ for ri, d in enumerate(DIMS):
             centroid[ri, ci] = c
 
 # ── plot ──────────────────────────────────────────────────────────────────────
-fig, axes = plt.subplots(1, 3, figsize=(16, 4))
+fig, axes = plt.subplots(1, 3, figsize=(24, 5))
 fig.suptitle("Val loss heatmaps: latent_dim × beta  (lower = better, log scale)",
              fontsize=13)
 
-beta_labels = ["0", "1e-6", "1e-5", "1e-4", "1e-3"]
+beta_labels = ["0", "1e-6", "2e-6", "5e-6", "1e-5", "2e-5", "5e-5", "1e-4", "1e-3"]
 dim_labels  = [str(d) for d in DIMS]
 
 panels = [
@@ -78,12 +97,13 @@ panels = [
 
 for ax, (title, mat) in zip(axes, panels):
     valid = mat[~np.isnan(mat)]
-    vmin, vmax = valid.min(), valid.max()
+    vmin = valid.min()
+    vmax = np.percentile(valid, 85)
     norm = mcolors.LogNorm(vmin=vmin, vmax=vmax)
-    cmap = plt.cm.viridis_r
+    cmap = plt.cm.RdYlGn_r
 
     im = ax.imshow(mat, norm=norm, cmap=cmap, aspect="auto")
-    plt.colorbar(im, ax=ax)
+    plt.colorbar(im, ax=ax, extend="max")
 
     ax.set_xticks(range(ncols))
     ax.set_xticklabels(beta_labels)
