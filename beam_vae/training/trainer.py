@@ -287,6 +287,17 @@ class Trainer:
         Returns:
             Training history dictionary.
         """
+        _csv_fields = ["total", "recon", "kl", "scale", "centroid"]
+        _history_path = None
+        if save_dir is not None:
+            save_dir = Path(save_dir)
+            save_dir.mkdir(parents=True, exist_ok=True)
+            _history_path = save_dir / f"{model_name}_history.csv"
+            if not _history_path.exists():
+                with open(_history_path, "w", newline="") as f:
+                    header = ["epoch"] + [f"train_{k}" for k in _csv_fields] + [f"val_{k}" for k in _csv_fields]
+                    csv.writer(f).writerow(header)
+
         epoch_bar = tqdm(range(self.start_epoch, epochs), desc="Epochs", unit="epoch")
         for epoch in epoch_bar:
             train_metrics = self.train_epoch(train_loader, max_steps)
@@ -296,6 +307,12 @@ class Trainer:
             for split, metrics in [("train", train_metrics), ("val", val_metrics)]:
                 for key in ["total", "recon", "kl", "scale", "centroid"]:
                     self.history[f"{split}_{key}"].append(metrics[key])
+
+            # Append this epoch to CSV immediately so progress survives job kills
+            if _history_path is not None:
+                with open(_history_path, "a", newline="") as f:
+                    row = [epoch + 1] + [train_metrics[k] for k in _csv_fields] + [val_metrics[k] for k in _csv_fields]
+                    csv.writer(f).writerow(row)
 
             # Update scheduler
             if self.scheduler is not None:
@@ -328,9 +345,6 @@ class Trainer:
 
             # Checkpointing
             if save_dir is not None:
-                save_dir = Path(save_dir)
-                save_dir.mkdir(parents=True, exist_ok=True)
-
                 # Save best model
                 if val_metrics["total"] < self.best_val_loss:
                     self.best_val_loss = val_metrics["total"]
@@ -342,18 +356,13 @@ class Trainer:
                     ckpt_path = save_dir / f"{model_name}_epoch{epoch + 1}.pth"
                     self._save_checkpoint(ckpt_path, epoch + 1, train_metrics, val_metrics)
 
-        # Save final model and history
+        # Save final model
         if save_dir is not None:
-            save_dir = Path(save_dir)
-            save_dir.mkdir(parents=True, exist_ok=True)
-
             model_path = save_dir / f"{model_name}.pth"
             torch.save(self._get_base_model().state_dict(), model_path)
             print(f"Model saved to: {model_path}")
-
-            history_path = save_dir / f"{model_name}_history.csv"
-            self._save_history(history_path, epochs)
-            print(f"History saved to: {history_path}")
+            if _history_path is not None:
+                print(f"History saved to: {_history_path}")
 
         return self.history
 
