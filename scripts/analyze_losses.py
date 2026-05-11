@@ -118,6 +118,7 @@ def print_convergence(run_dirs, metric="val_recon"):
             continue
         name = Path(d).name
         final = float(rows[-1][metric])
+        max_epoch = int(rows[-1]["epoch"])
         hits = []
         for t in thresholds:
             hit = None
@@ -126,15 +127,15 @@ def print_convergence(run_dirs, metric="val_recon"):
                     hit = int(r["epoch"])
                     break
             hits.append(hit)
-        results.append((name, hits, final))
+        results.append((name, hits, final, max_epoch))
 
     # Sort by first threshold reached (earliest = best)
     results.sort(key=lambda r: r[1][-1] if r[1][-1] is not None else 99999)
 
-    for name, hits, final in results:
+    for name, hits, final, max_epoch in results:
         line = f"{name:<35}"
         for h in hits:
-            line += f"  {str(h) if h else '>'+str(int(rows[-1]['epoch'])):<12}"
+            line += f"  {str(h) if h else '>'+str(max_epoch):<12}"
         line += f"  {final:>12.7f}"
         print(line)
 
