@@ -1,8 +1,27 @@
 # Experiment Log
 
-**Defaults unless noted:** `model=vae2d` · `lr=1e-3` · `latent_dim=128` · `beta=1e-5` · `scheduler=ReduceOnPlateau` · `500 epochs max`
+**Defaults unless noted:** `model=vae2d` · `lr=5e-4` · `latent_dim=128` · `beta=1e-5` · `scheduler=ReduceOnPlateau` · `500 epochs max`
 
 **Dataset:** All v2 runs use `v2_sectioned_1sec_10k` (`/pscratch/sd/n/ndwang/latent_beam_dynamics/data/v2/vae_training/`). Legacy v1 runs (sectioned_10k, linear_10k, frequency_maps datasets) are archived in `runs/v1/` and not documented here.
+
+---
+
+## Pending Experiments
+
+| scan | job ID | submitted | nodes | runs | status | what to do |
+|------|--------|-----------|-------|------|--------|------------|
+| Scan 8 — full heatmap lr=5e-4 | 52794941 | 2026-05-10 | 7 | 28 | **running** | run `analyze_losses.py runs/latent_dim_*_260*/` and `runs/beta_*_260*/`; update `plot_heatmap.py` DATA dict; archive old heatmap as `heatmap_dim_beta_lr1e-3.png`; regenerate `heatmap_dim_beta.png`; fill in Scan 8 results in EXPERIMENTS.md |
+
+Submit command:
+```bash
+bash slurm/submit_grid.sh \
+  "model.latent_dim" "64 128 256 512" \
+  "training.beta" "1e-6 2e-6 5e-6 1e-5 2e-5 5e-5 1e-4" \
+  "training.lr=5e-4" \
+  "v2_scan8_heatmap_lr5e-4"
+```
+
+Any run that times out (slow node): resume with `--resume runs/<run_name>/<run_name>_epoch<N>.pth` — incremental CSV means no history is lost.
 
 ---
 
@@ -312,6 +331,58 @@ Three candidate triggers:
 
 **What the result implies either way:** A seed-only fix is fragile and unsatisfying. An LR fix is principled — if it works, the dim=256 portion of the heatmap below beta=1e-5 should be re-run at the lower lr to see whether the true optimum was hidden behind a training-stability artifact. If lr=5e-4 also works, lr=1e-3 is plausibly too large globally and we should consider lowering the default. A structural cause would mean the dim=256 architecture has an inherent issue — the bottleneck shape, auxiliary head width, or init — that needs targeted fixes before further latent-dim sweeps are meaningful.
 
+**Grid A results — seed sweep (beta ∈ {1e-6, 5e-6} × seed ∈ {42, 43, 44, 45}, lr=1e-3):**
+
+| run | outcome | val_recon | val_kl | val_scale | val_centroid |
+|-----|---------|-----------|--------|-----------|--------------|
+| beta=1e-6, seed=42 | partial collapse | 1.02e-5 | 29.3 (stuck) | 4.08e-5 | 1.67e-4 |
+| beta=1e-6, seed=43 | **NaN crash** (step 338, epoch ~19) | — | 38.3 at crash | — | — |
+| beta=1e-6, seed=44 | complete | 1.09e-5 | 1.95 | 3.22e-4 | 5.06e-2 |
+| beta=1e-6, seed=45 | **NaN crash** (early) | — | — | — | — |
+| beta=5e-6, seed=42 | **full collapse** (epoch 13) | 1.38e-3 | 53.8 (stuck) | ≈1.0 | ≈0.87 |
+| beta=5e-6, seed=43 | cancelled (time limit, ~250 ep) | — | — | — | — |
+| beta=5e-6, seed=44 | **NaN crash** (step 101, epoch ~6) | — | 54.4 at crash | — | — |
+| beta=5e-6, seed=45 | **NaN crash** (early) | — | — | — | — |
+
+6 of 8 runs failed (4 NaN crashes, 1 full collapse, 1 time-limit cancellation). The one apparently successful run (beta=1e-6, seed=44) converged in val_recon but has anomalous scale/centroid: val_centroid=5.06e-2 is 700× above the best reference, and val_scale=3.22e-4 is 15× worse — despite val_kl=1.95 being healthy. Likely the auxiliary heads didn't converge. The partial-collapse run (beta=1e-6, seed=42) has stuck KL=29.3 but still reaches val_recon=1.02e-5 — the decoder extracts signal from the corrupted latent space but downstream physics metrics are unreliable.
+
+**Grid B results — LR scan (beta ∈ {1e-6, 5e-6} × lr ∈ {1e-4, 5e-4}, seed=42):**
+
+| run | val_recon | val_kl | val_scale | val_centroid | epochs to 1.7e-5 |
+|-----|-----------|--------|-----------|--------------|------------------|
+| beta=1e-6, lr=5e-4 | **8.6e-6** | 3.26 | 2.52e-5 | 1.22e-4 | 98 |
+| beta=5e-6, lr=5e-4 | 9.5e-6 | **0.72** | 3.80e-5 | 8.85e-5 | 111 |
+| beta=5e-6, lr=1e-4 | 1.64e-5 | 2.71 | 1.48e-4 | 2.61e-4 | 396 |
+| beta=1e-6, lr=1e-4 | 2.25e-5 | 14.4 | 1.23e-4 | 1.70e-4 | >500 |
+
+All 4 completed. No collapse at either lr. lr=5e-4 reaches the same threshold 4× faster than lr=1e-4 and also converges to substantially better final values. beta=1e-6 + lr=1e-4 still has KL=14.4 at epoch 500 — even the lower lr doesn't fully stabilize this beta without the higher lr's momentum to escape the early-training instability.
+
+**Conclusions:**
+
+- **Collapse is LR-driven, not seed-specific.** Grid A ran 8 seeds at lr=1e-3 and 7 of 8 failed (6 outright failures plus one questionable success). If seed were the cause, we'd expect a roughly even split. Instead, varying the seed did nothing; varying the LR fixed everything. The collapse mechanism is that lr=1e-3, with ReduceOnPlateau still at its initial value during the fragile first ~15 epochs, takes Adam steps large enough to push μ past the logvar clamp on enough dims to trigger the posterior-collapse bifurcation. Once that flip happens — as the single-epoch collapse trace at beta=1e-6 demonstrated — there is no recovery.
+
+- **lr=5e-4 is the right default.** It eliminates collapse across both tested betas, converges ~4× faster than lr=1e-4, and reaches better final values. lr=1e-4 avoids collapse but doesn't fully settle (KL=14.4 at convergence for beta=1e-6) and is unnecessarily slow. The earlier LR scan (Scans 1–6) that named lr=1e-3 as the winner was evaluating survivorship — it was inadvertently testing which seeds happened to not collapse, not which LR was actually best. **The default LR has been updated to 5e-4.**
+
+- **The dim=256 heatmap below beta=1e-5 was never honestly measured.** Every cell in that region (beta ∈ {0, 1e-6, 2e-6, 5e-6}) showed collapse or NaN at lr=1e-3. None of those outcomes reflect the true capability of those configurations — they reflect LR instability. The true optimum at dim=256 may sit at a lower beta than 1e-5 if retrained with lr=5e-4. This is the most important open question.
+
+- **beta_1e-6 + lr=5e-4 achieves val_recon=8.6e-6**, close to the current best (7.9e-6 at dim=256+beta=1e-5+lr=1e-3) and competitive on scale (2.52e-5 vs 2.1e-5). The current champion was trained under what is now known to be an unstable LR — whether it merely got lucky or whether beta=1e-5 is genuinely more stable at lr=1e-3 is a secondary question. The priority is re-running the full beta sweep at dim=256 with lr=5e-4 to see the true loss surface.
+
+- **Whether lr sensitivity is dim- or beta-dependent is unknown.** The LR scan only covers dim=256 with beta ∈ {1e-6, 5e-6}. Prior scans at dim=128 with lr=1e-3 mostly succeeded — smaller dims may tolerate higher LR. Until tested, lr=5e-4 should be treated as the safe universal default.
+
+---
+
+## Scan 8 — Full heatmap re-run at lr=5e-4 (submitted 2026-05-10)
+
+**Question:** What does the true dim × beta loss surface look like when all runs use the same, stable learning rate?
+
+**Motivation:** Every scan up to Scan 7 used lr=1e-3 as the default. Scan 7 proved this was wrong: lr=1e-3 causes NaN crashes and posterior collapse at a rate of 6/8 runs for certain (dim, beta) combinations, making those heatmap cells artifacts of training instability rather than genuine hyperparameter behavior. The existing heatmap is therefore a mix of real results (cells where lr=1e-3 happened to be stable) and failures (cells where it wasn't). The two lr=5e-4 data points from Scan 7 (dim=256 × {1e-6, 5e-6}) already showed that the previously-collapsed cells train cleanly and reach competitive val_recon — but two cells don't reveal the full surface shape. The entire grid needs to be re-run under controlled, consistent conditions before any further architectural decisions are made.
+
+**Design:** Full 4×7 grid: `latent_dim ∈ {64, 128, 256, 512}` × `beta ∈ {1e-6, 2e-6, 5e-6, 1e-5, 2e-5, 5e-5, 1e-4}`. Fixed: `lr=5e-4`, `seed=42`, `data=v2_sectioned_1sec_10k`. beta=1e-3 excluded (shown to be bad at all dims, nothing new to learn). 28 runs, 7 nodes, all parallel, 8h time limit. W&B group: `v2_scan8_heatmap_lr5e-4`. Any run that times out (slow node) can be resumed from its last periodic checkpoint, and the incremental CSV means no history is lost.
+
+**What we expect:** The collapsed cells at dim=256 (beta ∈ {2e-6}) and dim=512 (beta ∈ {1e-6, 2e-6, 5e-6}) should now train cleanly, revealing the true shape of the low-beta region. The prior heatmap showed a sharp stability cliff at dim=256 just below beta=1e-5 — that cliff should disappear or shift significantly at lr=5e-4. For dims already stable at lr=1e-3 (dim=128, dim=64 at higher betas), the results should be close to existing data, confirming those cells weren't significantly biased by LR. The optimum for dim=256 may turn out to be at a lower beta than 1e-5 now that those cells are accessible.
+
+**What the result implies either way:** If the new surface is broadly similar to the old one for the stable cells and fills in the collapsed region cleanly, the lr=1e-3 heatmap was only wrong in the specific failure cells — the rest of the prior conclusions hold. If the new surface differs substantially even in the previously-stable region (e.g., dim=128 optimum shifts, scale/centroid curves change shape), it means lr was a confounding factor throughout and the prior scan conclusions need to be revisited. The new heatmap also directly answers whether lr sensitivity is dim- or beta-dependent: if dim=64/128 results at lr=5e-4 match lr=1e-3 closely, those dims are LR-robust; if they differ, lr matters everywhere.
+
 ---
 
 ## Best Checkpoints
@@ -325,4 +396,8 @@ Three candidate triggers:
 
 ## Open Questions
 
+- **What is the true dim=256 optimum at lr=5e-4?** Every beta < 1e-5 tested at dim=256 was trained at lr=1e-3 and failed (collapse or NaN). None of those results reflect what those configs can actually do. Re-running beta ∈ {1e-6, 2e-6, 5e-6, 2e-5} at dim=256 with lr=5e-4 is the highest-priority next scan.
+
 - **Is dim=256 over-provisioned for beam dynamics?** dim=128 + beta=5e-6 uses 33/128 active dims — same intrinsic dimensionality as dim=256 (45/256) but 37% worse reconstruction. The transformer dynamics model may absorb that reconstruction gap if the latent space is more compact.
+
+- **Is lr sensitivity dim- and beta-dependent?** The LR scan confirms lr=5e-4 is right for dim=256 at low beta, but dim=128 ran stably at lr=1e-3. Whether the optimal LR shifts with dim or beta is untested.

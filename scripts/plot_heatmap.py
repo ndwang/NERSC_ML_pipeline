@@ -41,11 +41,11 @@ DATA = {
     (128, 2e-5): (9.2e-6,  1.34e-4, 3.66e-4),
     (128, 5e-5): (1.18e-5, 2.99e-4, 2.36e-3),
 
-    # Scan 2 / 3 / 4 / 5 — dim=256 (collapsed cells from Scan 4)
-    (256, 0):    (4.3e-4,  1.0e-2,  2.8e-2),  # collapsed epoch 9
-    (256, 1e-6): (3.5e-4,  4.1e-2,  7.9e-2),  # collapsed epoch 11
-    (256, 2e-6): (2.33e-4, 9.3e-3,  6.3e-2),  # collapsed epoch 13
-    (256, 5e-6): (2.68e-4, 2.58e-3, 1.0e-2),  # collapsed epoch 11
+    # Scan 2 / 3 / 4 / 5 — dim=256
+    (256, 0):    (4.3e-4,  1.0e-2,  2.8e-2),  # collapsed epoch 9 (lr=1e-3)
+    (256, 1e-6): (8.6e-6,  2.52e-5, 1.224e-4),  # Scan 7, lr=5e-4, epoch 468
+    (256, 2e-6): (2.33e-4, 9.3e-3,  6.3e-2),  # collapsed epoch 13 (lr=1e-3)
+    (256, 5e-6): (9.5e-6,  3.80e-5, 8.85e-5),  # Scan 7, lr=5e-4, epoch 500
     (256, 1e-5): (7.9e-6,  2.1e-5,  7.3e-5),
     (256, 2e-5): (9.51e-6, 3.87e-5, 2.53e-4),  # Scan 5 rerun, 500 epochs
     (256, 5e-5): (9.97e-6, 1.11e-4, 7.76e-4),  # Scan 5 rerun, epoch-500 converged value
@@ -64,7 +64,9 @@ DATA = {
 # "unreg" = posterior collapse (beta too low); "crash" = NaN/exception
 # "t/o" = timed out; "partial" = partial collapse, still shows numeric value
 SPECIAL = {
-    (512, 0): "unreg",  # collapsed before epoch 50, no CSV
+    (256, 0):   "unreg",  # collapsed epoch 9, lr=1e-3
+    (256, 2e-6): "unreg",  # collapsed epoch 13, lr=1e-3
+    (512, 0):   "unreg",  # collapsed before epoch 50, lr=1e-3
 }
 
 # ── build arrays ──────────────────────────────────────────────────────────────
