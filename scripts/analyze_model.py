@@ -343,28 +343,27 @@ def analyze_latent_space(model, dataset, output_dir, n_samples=5000):
     fig.savefig(output_dir / "latent_density_pca.png", dpi=150)
     plt.close(fig)
 
-    # ── Latent space scatter: physics-aligned axes ──
-    print("  Plotting physics-aligned scatter (β_x vs α_x, color=ε_x)...")
-    # Project onto β_x and α_x directions, color by ε_x
-    regs_twiss = regs_by_group["Twiss"]
-    beta_x_idx = twiss_labels.index("β_x")
-    alpha_x_idx = twiss_labels.index("α_x")
-    emit_x_idx = twiss_labels.index("ε_x")
+    # ── Latent space scatter: beam size axes ──
+    print("  Plotting beam-size scatter (σ_x vs σ_y, color=log σ_z)...")
+    regs_scales = regs_by_group["Scales"]
+    sx_idx = scale_labels.index("log σ_x")
+    sy_idx = scale_labels.index("log σ_y")
+    sz_idx = scale_labels.index("log σ_z")
 
-    w_beta = regs_twiss[beta_x_idx].coef_
-    w_alpha = regs_twiss[alpha_x_idx].coef_
-    proj_beta = mu @ (w_beta / np.linalg.norm(w_beta))
-    proj_alpha = mu @ (w_alpha / np.linalg.norm(w_alpha))
+    w_sx = regs_scales[sx_idx].coef_
+    w_sy = regs_scales[sy_idx].coef_
+    proj_sx = mu @ (w_sx / np.linalg.norm(w_sx))
+    proj_sy = mu @ (w_sy / np.linalg.norm(w_sy))
 
     fig, ax = plt.subplots(figsize=(9, 7))
-    sc = ax.scatter(proj_beta, proj_alpha, c=twiss_arr[:, emit_x_idx],
+    sc = ax.scatter(proj_sx, proj_sy, c=log_scales[:, sz_idx],
                     cmap="viridis", s=4, alpha=0.5, rasterized=True)
-    ax.set_xlabel("Projection along β_x direction")
-    ax.set_ylabel("Projection along α_x direction")
-    ax.set_title("Beam Distribution in Latent Space (Physics-Aligned Axes)")
-    fig.colorbar(sc, ax=ax, label="ε_x")
+    ax.set_xlabel("Projection along log σ_x direction")
+    ax.set_ylabel("Projection along log σ_y direction")
+    ax.set_title("Beam Distribution in Latent Space (Beam Size Axes)")
+    fig.colorbar(sc, ax=ax, label="log σ_z")
     fig.tight_layout()
-    fig.savefig(output_dir / "latent_scatter_twiss.png", dpi=150)
+    fig.savefig(output_dir / "latent_scatter_beam_size.png", dpi=150)
     plt.close(fig)
 
     # ── Correlation heatmap: physical parameters vs PCs ──
